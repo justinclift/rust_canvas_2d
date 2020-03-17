@@ -1,0 +1,13 @@
+{
+  "name": "canvas_2d_test1",
+  "collaborators": [
+    "Justin Clift <justin@postgresql.org>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "canvas_2d_test1_bg.wasm",
+    "canvas_2d_test1.js"
+  ],
+  "module": "canvas_2d_test1.js",
+  "sideEffects": false
+}

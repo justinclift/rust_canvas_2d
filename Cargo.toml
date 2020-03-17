@@ -1,0 +1,29 @@
+[package]
+name = "canvas_2d_test1"
+version = "0.1.0"
+authors = ["Justin Clift <justin@postgresql.org>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2.59"
+js-sys = "0.3.36"
+
+[dependencies.web-sys]
+version = "0.3.36"
+features = [
+  'CanvasRenderingContext2d',
+  'CssStyleDeclaration',
+  'Document',
+  'Element',
+  'HtmlCanvasElement',
+  'WebGlBuffer',
+  'WebGlRenderingContext',
+  'WebGlProgram',
+  'WebGlShader',
+  'Window',
+  'console',
+  'WebGlUniformLocation',
+]
