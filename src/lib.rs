@@ -1,4 +1,4 @@
-use js_sys::WebAssembly;
+// use js_sys::WebAssembly;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 // use web_sys::{WebGlProgram, WebGlRenderingContext, WebGlShader};
@@ -10,12 +10,33 @@ use wasm_bindgen::JsCast;
 //     u_matrix: web_sys::WebGlUniformLocation,
 // }
 
+enum OperationType {
+    NOTHING,
+    ROTATE,
+    SCALE,
+    TRANSLATE,
+}
+
 struct Point {
     num: i32,
     x: f64,
     y: f64,
     z: f64,
 }
+
+// The 4x4 identity matrix
+const IDENTITY_MATRIX: [f64; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
+
+// * Globals *
+
+// Initialise the transform matrix to the identity matrix
+static mut TRANSFORM_MATRIX: [f64; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
+static mut OP_TEXT: String = String::new();
+static mut QUEUE_OP: &OperationType = &OperationType::NOTHING;
 
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
@@ -58,7 +79,7 @@ pub fn main() -> Result<(), JsValue> {
 }
 
 // Multiplies one matrix by another
-fn matrix_mult(op_matrix: Vec<f64>, m: Vec<f64>) -> Vec<f64> {
+fn matrix_mult(op_matrix: &[f64; 16], m: &[f64; 16]) -> [f64; 16] {
     let top0 = m[0];
     let top1 = m[1];
     let top2 = m[2];
@@ -76,7 +97,7 @@ fn matrix_mult(op_matrix: Vec<f64>, m: Vec<f64>) -> Vec<f64> {
     let bot2 = m[14];
     let bot3 = m[15];
 
-    vec![
+    [
         (op_matrix[0] * top0) // 1st col, top
             + (op_matrix[1] * upper_mid0)
             + (op_matrix[2] * lower_mid0)
@@ -145,9 +166,9 @@ fn matrix_mult(op_matrix: Vec<f64>, m: Vec<f64>) -> Vec<f64> {
 }
 
 // Rotates a transformation matrix around the X axis by the given degrees
-fn rotate_around_x(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+fn rotate_around_x(m: &[f64; 16], degrees: f64) -> [f64; 16] {
     let rad = degrees.to_radians();
-    let rotate_x_matrix = vec![
+    let rotate_x_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   1.0, 0.0, 0.0, 0.0,
         //   0.0, rad.cos(), -rad.sin(), 0.0,
@@ -170,13 +191,13 @@ fn rotate_around_x(m: Vec<f64>, degrees: f64) -> Vec<f64> {
         0.0,
         1.0,
     ];
-    matrix_mult(rotate_x_matrix, m)
+    matrix_mult(&rotate_x_matrix, m)
 }
 
 // Rotates a transformation matrix around the Y axis by the given degrees
-fn rotate_around_y(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+fn rotate_around_y(m: &[f64; 16], degrees: f64) -> [f64; 16] {
     let rad = degrees.to_radians();
-    let rotate_y_matrix = vec![
+    let rotate_y_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   rad.cos(), 0.0, rad.sin(), 0.0,
         //   0.0, 1.0, 0.0, 0.0,
@@ -199,13 +220,13 @@ fn rotate_around_y(m: Vec<f64>, degrees: f64) -> Vec<f64> {
         0.0,
         1.0,
     ];
-    matrix_mult(rotate_y_matrix, m)
+    matrix_mult(&rotate_y_matrix, m)
 }
 
 // Rotates a transformation matrix around the Z axis by the given degrees
-fn rotate_around_z(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+fn rotate_around_z(m: &[f64; 16], degrees: f64) -> [f64; 16] {
     let rad = degrees.to_radians();
-    let rotate_z_matrix = vec![
+    let rotate_z_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   rad.cos(), -rad.sin(), 0.0, 0.0,
         //   rad.sin(), rad.cos(), 0.0, 0.0,
@@ -228,12 +249,12 @@ fn rotate_around_z(m: Vec<f64>, degrees: f64) -> Vec<f64> {
         0.0,
         1.0,
     ];
-    matrix_mult(rotate_z_matrix, m)
+    matrix_mult(&rotate_z_matrix, m)
 }
 
 // Scales a transformation matrix by the given X, Y, and Z values
-fn scale(m: Vec<f64>, x: f64, y: f64, z: f64) -> Vec<f64> {
-    let scale_matrix = vec![
+fn scale(m: &[f64; 16], x: f64, y: f64, z: f64) -> [f64; 16] {
+    let scale_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   x, 0.0, 0.0, 0.0,
         //   0.0, y, 0.0, 0.0,
@@ -241,11 +262,66 @@ fn scale(m: Vec<f64>, x: f64, y: f64, z: f64) -> Vec<f64> {
         //   0.0, 0.0, 0.0, 1.0,
         x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
     ];
-    matrix_mult(scale_matrix, m)
+    matrix_mult(&scale_matrix, m)
+}
+
+// Set up the details for the transformation operation
+unsafe fn set_up_operation(op: &'static OperationType, t: i32, f: i32, x: f64, y: f64, z: f64) {
+    let queue_parts = f.clone() as f64; // Number of parts to break each transformation into
+    TRANSFORM_MATRIX = IDENTITY_MATRIX.clone(); // Reset the transform matrix
+    match op {
+        // Rotate the objects in world space
+        OperationType::ROTATE => {
+            // Divide the desired angle into a small number of parts
+            if x != 0.0 {
+                TRANSFORM_MATRIX = rotate_around_x(&TRANSFORM_MATRIX, x / queue_parts);
+            }
+            if y != 0.0 {
+                TRANSFORM_MATRIX = rotate_around_y(&TRANSFORM_MATRIX, y / queue_parts);
+            }
+            if z != 0.0 {
+                TRANSFORM_MATRIX = rotate_around_z(&TRANSFORM_MATRIX, z / queue_parts);
+            }
+            OP_TEXT = format!("Rotation. X: {} Y: {} Z: {}", x, y, z);
+        }
+
+        // Scale the objects in world space
+        OperationType::SCALE => {
+            let mut x_part = 0.0;
+            let mut y_part = 0.0;
+            let mut z_part = 0.0;
+            if x != 1.0 {
+                x_part = ((x - 1.0) / queue_parts) + 1.0;
+            }
+            if y != 1.0 {
+                y_part = ((y - 1.0) / queue_parts) + 1.0;
+            }
+            if z != 1.0 {
+                z_part = ((z - 1.0) / queue_parts) + 1.0;
+            }
+            TRANSFORM_MATRIX = scale(&TRANSFORM_MATRIX, x_part, y_part, z_part);
+            OP_TEXT = format!("Scale. X: {} Y: {} Z: {}", x, y, z);
+        }
+
+        // Translate (move) the objects in world space
+        OperationType::TRANSLATE => {
+            TRANSFORM_MATRIX = translate(
+                &TRANSFORM_MATRIX,
+                x / queue_parts,
+                y / queue_parts,
+                z / queue_parts,
+            );
+            OP_TEXT = format!("Translate. X: {} Y: {} Z: {}", x, y, z);
+        }
+
+        // Nothing to do
+        OperationType::NOTHING => {}
+    }
+    QUEUE_OP = op;
 }
 
 // Transform the XYZ co-ordinates using the values from the transformation matrix
-fn transform(m: Vec<f64>, p: Point) -> Point {
+fn transform(m: &[f64; 16], p: Point) -> Point {
     let top0 = m[0];
     let top1 = m[1];
     let top2 = m[2];
@@ -272,8 +348,8 @@ fn transform(m: Vec<f64>, p: Point) -> Point {
 }
 
 // Translates (moves) a transformation matrix by the given X, Y and Z values
-fn translate(m: Vec<f64>, translate_x: f64, translate_y: f64, translate_z: f64) -> Vec<f64> {
-    let translate_matrix = vec![
+fn translate(m: &[f64; 16], translate_x: f64, translate_y: f64, translate_z: f64) -> [f64; 16] {
+    let translate_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   1.0, 0.0, 0.0, translate_x,
         //   0.0, 1.0, 0.0, translate_y,
@@ -296,5 +372,5 @@ fn translate(m: Vec<f64>, translate_x: f64, translate_y: f64, translate_z: f64) 
         0.0,
         1.0,
     ];
-    matrix_mult(translate_matrix, m)
+    matrix_mult(&translate_matrix, &m)
 }
