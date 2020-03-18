@@ -12,9 +12,9 @@ use wasm_bindgen::JsCast;
 
 struct Point {
     num: i32,
-    x:   f64,
-    y:   f64,
-    z:   f64,
+    x: f64,
+    y: f64,
+    z: f64,
 }
 
 // Called when the wasm module is instantiated
@@ -29,8 +29,8 @@ pub fn main() -> Result<(), JsValue> {
     // Print some info to the console log
     let width = canvas.width() as f64;
     let height = canvas.height() as f64;
-    web_sys::console::log_2(&"Width: %s".into(),&width.into());
-    web_sys::console::log_2(&"Height: %s".into(),&height.into());
+    web_sys::console::log_2(&"Width: %s".into(), &width.into());
+    web_sys::console::log_2(&"Height: %s".into(), &height.into());
 
     let context = canvas
         .get_context("2d")?
@@ -57,35 +57,8 @@ pub fn main() -> Result<(), JsValue> {
     Ok(())
 }
 
-// Transform the XYZ co-ordinates using the values from the transformation matrix
-fn transform(m: Vec<f64>, p: Point) -> Point {
-    let top0 = m[0];
-    let top1 = m[1];
-    let top2 = m[2];
-    let top3 = m[3];
-    let upper_mid0 = m[4];
-    let upper_mid1 = m[5];
-    let upper_mid2 = m[6];
-    let upper_mid3 = m[7];
-    let lower_mid0 = m[8];
-    let lower_mid1 = m[9];
-    let lower_mid2 = m[10];
-    let lower_mid3 = m[11];
-    //bot0 := m[12] // The fourth row values are ignored for 3D matrices
-    //bot1 := m[13]
-    //bot2 := m[14]
-    //bot3 := m[15]
-
-    Point {
-        num: p.num,
-        x: (top0 * p.x) + (top1 * p.y) + (top2 * p.z) + top3,
-        y: (upper_mid0 * p.x) + (upper_mid1 * p.y) + (upper_mid2 * p.z) + upper_mid3,
-        z: (lower_mid0 * p.x) + (lower_mid1 * p.y) + (lower_mid2 * p.z) + lower_mid3,
-    }
-}
-
 // Multiplies one matrix by another
-fn matrix_mult(opMatrix: Vec<f64>, m: Vec<f64>) -> Vec<f64>{
+fn matrix_mult(op_matrix: Vec<f64>, m: Vec<f64>) -> Vec<f64> {
     let top0 = m[0];
     let top1 = m[1];
     let top2 = m[2];
@@ -104,33 +77,221 @@ fn matrix_mult(opMatrix: Vec<f64>, m: Vec<f64>) -> Vec<f64>{
     let bot3 = m[15];
 
     vec![
-    (opMatrix[0] * top0) + (opMatrix[1] * upper_mid0) + (opMatrix[2] * lower_mid0) + (opMatrix[3] * bot0), // 1st col, top
-    (opMatrix[0] * top1) + (opMatrix[1] * upper_mid1) + (opMatrix[2] * lower_mid1) + (opMatrix[3] * bot1), // 2nd col, top
-    (opMatrix[0] * top2) + (opMatrix[1] * upper_mid2) + (opMatrix[2] * lower_mid2) + (opMatrix[3] * bot2), // 3rd col, top
-    (opMatrix[0] * top3) + (opMatrix[1] * upper_mid3) + (opMatrix[2] * lower_mid3) + (opMatrix[3] * bot3), // 4th col, top
+        (op_matrix[0] * top0) // 1st col, top
+            + (op_matrix[1] * upper_mid0)
+            + (op_matrix[2] * lower_mid0)
+            + (op_matrix[3] * bot0),
+        (op_matrix[0] * top1) // 2nd col, top
+            + (op_matrix[1] * upper_mid1)
+            + (op_matrix[2] * lower_mid1)
+            + (op_matrix[3] * bot1),
+        (op_matrix[0] * top2) // 3rd col, top
+            + (op_matrix[1] * upper_mid2)
+            + (op_matrix[2] * lower_mid2)
+            + (op_matrix[3] * bot2),
+        (op_matrix[0] * top3) // 4th col, top
+            + (op_matrix[1] * upper_mid3)
+            + (op_matrix[2] * lower_mid3)
+            + (op_matrix[3] * bot3),
+        (op_matrix[4] * top0) // 1st col, upper middle
+            + (op_matrix[5] * upper_mid0)
+            + (op_matrix[6] * lower_mid0)
+            + (op_matrix[7] * bot0),
+        (op_matrix[4] * top1) // 2nd col, upper middle
+            + (op_matrix[5] * upper_mid1)
+            + (op_matrix[6] * lower_mid1)
+            + (op_matrix[7] * bot1),
+        (op_matrix[4] * top2) // 3rd col, upper middle
+            + (op_matrix[5] * upper_mid2)
+            + (op_matrix[6] * lower_mid2)
+            + (op_matrix[7] * bot2),
+        (op_matrix[4] * top3) // 4th col, upper middle
+            + (op_matrix[5] * upper_mid3)
+            + (op_matrix[6] * lower_mid3)
+            + (op_matrix[7] * bot3),
+        (op_matrix[8] * top0) // 1st col, lower middle
+            + (op_matrix[9] * upper_mid0)
+            + (op_matrix[10] * lower_mid0)
+            + (op_matrix[11] * bot0),
+        (op_matrix[8] * top1) // 2nd col, lower middle
+            + (op_matrix[9] * upper_mid1)
+            + (op_matrix[10] * lower_mid1)
+            + (op_matrix[11] * bot1),
+        (op_matrix[8] * top2) // 3rd col, lower middle
+            + (op_matrix[9] * upper_mid2)
+            + (op_matrix[10] * lower_mid2)
+            + (op_matrix[11] * bot2),
+        (op_matrix[8] * top3) // 4th col, lower middle
+            + (op_matrix[9] * upper_mid3)
+            + (op_matrix[10] * lower_mid3)
+            + (op_matrix[11] * bot3),
+        (op_matrix[12] * top0) // 1st col, bottom
+            + (op_matrix[13] * upper_mid0)
+            + (op_matrix[14] * lower_mid0)
+            + (op_matrix[15] * bot0),
+        (op_matrix[12] * top1) // 2nd col, bottom
+            + (op_matrix[13] * upper_mid1)
+            + (op_matrix[14] * lower_mid1)
+            + (op_matrix[15] * bot1),
+        (op_matrix[12] * top2) // 3rd col, bottom
+            + (op_matrix[13] * upper_mid2)
+            + (op_matrix[14] * lower_mid2)
+            + (op_matrix[15] * bot2),
+        (op_matrix[12] * top3) // 4th col, bottom
+            + (op_matrix[13] * upper_mid3)
+            + (op_matrix[14] * lower_mid3)
+            + (op_matrix[15] * bot3),
+    ]
+}
 
-    (opMatrix[4] * top0) + (opMatrix[5] * upper_mid0) + (opMatrix[6] * lower_mid0) + (opMatrix[7] * bot0), // 1st col, upper middle
-    (opMatrix[4] * top1) + (opMatrix[5] * upper_mid1) + (opMatrix[6] * lower_mid1) + (opMatrix[7] * bot1), // 2nd col, upper middle
-    (opMatrix[4] * top2) + (opMatrix[5] * upper_mid2) + (opMatrix[6] * lower_mid2) + (opMatrix[7] * bot2), // 3rd col, upper middle
-    (opMatrix[4] * top3) + (opMatrix[5] * upper_mid3) + (opMatrix[6] * lower_mid3) + (opMatrix[7] * bot3), // 4th col, upper middle
+// Rotates a transformation matrix around the X axis by the given degrees
+fn rotate_around_x(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+    let rotate_x_matrix = vec![
+        // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
+        //   1.0, 0.0, 0.0, 0.0,
+        //   0.0, degrees.cos(), -degrees.sin(), 0.0,
+        //   0.0, degrees.sin(), degrees.cos(), 0.0,
+        //   0.0, 0.0, 0.0, 1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        degrees.cos(),
+        -degrees.sin(),
+        0.0,
+        0.0,
+        degrees.sin(),
+        degrees.cos(),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
+    matrix_mult(rotate_x_matrix, m)
+}
 
-    (opMatrix[8] * top0) + (opMatrix[9] * upper_mid0) + (opMatrix[10] * lower_mid0) + (opMatrix[11] * bot0), // 1st col, lower middle
-    (opMatrix[8] * top1) + (opMatrix[9] * upper_mid1) + (opMatrix[10] * lower_mid1) + (opMatrix[11] * bot1), // 2nd col, lower middle
-    (opMatrix[8] * top2) + (opMatrix[9] * upper_mid2) + (opMatrix[10] * lower_mid2) + (opMatrix[11] * bot2), // 3rd col, lower middle
-    (opMatrix[8] * top3) + (opMatrix[9] * upper_mid3) + (opMatrix[10] * lower_mid3) + (opMatrix[11] * bot3), // 4th col, lower middle
+// Rotates a transformation matrix around the Y axis by the given degrees
+fn rotate_around_y(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+    let rotate_y_matrix = vec![
+        // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
+        //   degrees.cos(), 0.0, degrees.sin(), 0.0,
+        //   0.0, 1.0, 0.0, 0.0,
+        //   -degrees.sin(), 0.0, degrees.cos(), 0.0,
+        //   0.0, 0.0, 0.0, 1.0,
+        degrees.cos(),
+        0.0,
+        degrees.sin(),
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -degrees.sin(),
+        0.0,
+        degrees.cos(),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
+    matrix_mult(rotate_y_matrix, m)
+}
 
-    (opMatrix[12] * top0) + (opMatrix[13] * upper_mid0) + (opMatrix[14] * lower_mid0) + (opMatrix[15] * bot0), // 1st col, bottom
-    (opMatrix[12] * top1) + (opMatrix[13] * upper_mid1) + (opMatrix[14] * lower_mid1) + (opMatrix[15] * bot1), // 2nd col, bottom
-    (opMatrix[12] * top2) + (opMatrix[13] * upper_mid2) + (opMatrix[14] * lower_mid2) + (opMatrix[15] * bot2), // 3rd col, bottom
-    (opMatrix[12] * top3) + (opMatrix[13] * upper_mid3) + (opMatrix[14] * lower_mid3) + (opMatrix[15] * bot3)] // 4th col, bottom
+// Rotates a transformation matrix around the Z axis by the given degrees
+fn rotate_around_z(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+    let rotate_z_matrix = vec![
+        // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
+        //   degrees.cos(), -degrees.sin(), 0.0, 0.0,
+        //   degrees.sin(), degrees.cos(), 0.0, 0.0,
+        //   0.0, 0.0, 1.0, 0.0,
+        //   0.0, 0.0, 0.0, 1.0,
+        degrees.cos(),
+        -degrees.sin(),
+        0.0,
+        0.0,
+        degrees.sin(),
+        degrees.cos(),
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
+    matrix_mult(rotate_z_matrix, m)
+}
+
+// Scales a transformation matrix by the given X, Y, and Z values
+fn scale(m: Vec<f64>, x: f64, y: f64, z: f64) -> Vec<f64> {
+    let scale_matrix = vec![
+        // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
+        //   x, 0.0, 0.0, 0.0,
+        //   0.0, y, 0.0, 0.0,
+        //   0.0, 0.0, z, 0.0,
+        //   0.0, 0.0, 0.0, 1.0,
+        x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    matrix_mult(scale_matrix, m)
+}
+
+// Transform the XYZ co-ordinates using the values from the transformation matrix
+fn transform(m: Vec<f64>, p: Point) -> Point {
+    let top0 = m[0];
+    let top1 = m[1];
+    let top2 = m[2];
+    let top3 = m[3];
+    let upper_mid0 = m[4];
+    let upper_mid1 = m[5];
+    let upper_mid2 = m[6];
+    let upper_mid3 = m[7];
+    let lower_mid0 = m[8];
+    let lower_mid1 = m[9];
+    let lower_mid2 = m[10];
+    let lower_mid3 = m[11];
+    //let bot0 = m[12]; // The fourth row values are ignored for 3D matrices
+    //let bot1 = m[13];
+    //let bot2 = m[14];
+    //let bot3 = m[15];
+
+    Point {
+        num: p.num,
+        x: (top0 * p.x) + (top1 * p.y) + (top2 * p.z) + top3,
+        y: (upper_mid0 * p.x) + (upper_mid1 * p.y) + (upper_mid2 * p.z) + upper_mid3,
+        z: (lower_mid0 * p.x) + (lower_mid1 * p.y) + (lower_mid2 * p.z) + lower_mid3,
+    }
 }
 
 // Translates (moves) a transformation matrix by the given X, Y and Z values
 fn translate(m: Vec<f64>, translate_x: f64, translate_y: f64, translate_z: f64) -> Vec<f64> {
     let translate_matrix = vec![
-    1.0, 0.0, 0.0, translate_x,
-    0.0, 1.0, 0.0, translate_y,
-    0.0, 0.0, 1.0, translate_z,
-    0.0, 0.0, 0.0, 1.0];
+        // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
+        //   1.0, 0.0, 0.0, translate_x,
+        //   0.0, 1.0, 0.0, translate_y,
+        //   0.0, 0.0, 1.0, translate_z,
+        //   0.0, 0.0, 0.0, 1.0,
+        1.0,
+        0.0,
+        0.0,
+        translate_x,
+        0.0,
+        1.0,
+        0.0,
+        translate_y,
+        0.0,
+        0.0,
+        1.0,
+        translate_z,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
     matrix_mult(translate_matrix, m)
 }
