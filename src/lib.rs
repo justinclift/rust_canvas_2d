@@ -24,19 +24,50 @@ struct Point {
     z: f64,
 }
 
+type Edge = Vec<i32>;
+type Surface = Vec<i32>;
+
+struct Object {
+    c: String,       // Colour of the object
+    p: Vec<Point>,   // List of point (vertices) in the object
+    e: Vec<Edge>,    // List of points to connect by edges
+    s: Vec<Surface>, // List of points to connect in order, to create a surface
+    mid: Point, // The mid point of the object.  Used for calculating object draw order in a very simple way
+}
+
+impl Object {
+    fn new() -> Object {
+        Object {
+            c: "".to_string(),
+            p: Vec::new(),
+            e: Vec::new(),
+            s: Vec::new(),
+            mid: Point {
+                num: 0,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        }
+    }
+}
+
+type Matrix = [f64; 16];
+
 // The 4x4 identity matrix
-const IDENTITY_MATRIX: [f64; 16] = [
+const IDENTITY_MATRIX: Matrix = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
 // * Globals *
 
 // Initialise the transform matrix to the identity matrix
-static mut TRANSFORM_MATRIX: [f64; 16] = [
+static mut TRANSFORM_MATRIX: Matrix = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 static mut OP_TEXT: String = String::new();
 static mut QUEUE_OP: &OperationType = &OperationType::NOTHING;
+static mut POINT_COUNTER: i32 = 0;
 
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
@@ -78,8 +109,75 @@ pub fn main() -> Result<(), JsValue> {
     Ok(())
 }
 
+// Returns an object whose points have been transformed into 3D world space XYZ co-ordinates.  Also assigns a number
+// to each point
+unsafe fn import_object(ob: Object, x: f64, y: f64, z: f64) -> Object {
+    // X and Y translation matrix.  Translates the objects into the world space at the given X and Y co-ordinates
+    let translate_matrix = [
+        // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
+        // 1.0, 0.0, 0.0, x,
+        // 0.0, 1.0, 0.0, y,
+        // 0.0, 0.0, 1.0, z,
+        // 0.0, 0.0, 0.0, 1.0,
+        1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z, 0.0, 0.0, 0.0, 1.0,
+    ];
+
+    // Translate the points
+    let mut translated_object = Object::new();
+    let mut mid_x = 0.0;
+    let mut mid_y = 0.0;
+    let mut mid_z = 0.0;
+    let mut pt = Point {
+        num: 0,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    for j in ob.p.iter() {
+        let pt_x = (translate_matrix[0] * j.x) // 1st col, top
+            + (translate_matrix[1] * j.y)
+            + (translate_matrix[2] * j.z)
+            + (translate_matrix[3] * 1.0);
+        let pt_y = (translate_matrix[4] * j.x) // 1st col, upper middle
+            + (translate_matrix[5] * j.y)
+            + (translate_matrix[6] * j.z)
+            + (translate_matrix[7] * 1.0);
+        let pt_z = (translate_matrix[8] * j.x) // 1st col, lower middle
+            + (translate_matrix[9] * j.y)
+            + (translate_matrix[10] * j.z)
+            + (translate_matrix[11] * 1.0);
+        translated_object.p.push(Point {
+            num: POINT_COUNTER,
+            x: pt_x,
+            y: pt_y,
+            z: pt_z,
+        });
+        mid_x += pt_x;
+        mid_y += pt_y;
+        mid_z += pt_z;
+        POINT_COUNTER += 1;
+    }
+
+    // Determine the mid point for the object
+    let num_pts = ob.p.len() as f64;
+    translated_object.mid.x = mid_x / num_pts;
+    translated_object.mid.y = mid_y / num_pts;
+    translated_object.mid.z = mid_z / num_pts;
+
+    // Copy the colour, edge, and surface definitions across
+    translated_object.c = ob.c;
+    for j in ob.e.iter() {
+        translated_object.e.push(j.clone());
+    }
+    for j in ob.s.iter() {
+        translated_object.s.push(j.clone());
+    }
+
+    translated_object
+}
+
 // Multiplies one matrix by another
-fn matrix_mult(op_matrix: &[f64; 16], m: &[f64; 16]) -> [f64; 16] {
+fn matrix_mult(op_matrix: &Matrix, m: &Matrix) -> Matrix {
     let top0 = m[0];
     let top1 = m[1];
     let top2 = m[2];
@@ -166,7 +264,7 @@ fn matrix_mult(op_matrix: &[f64; 16], m: &[f64; 16]) -> [f64; 16] {
 }
 
 // Rotates a transformation matrix around the X axis by the given degrees
-fn rotate_around_x(m: &[f64; 16], degrees: f64) -> [f64; 16] {
+fn rotate_around_x(m: &Matrix, degrees: f64) -> Matrix {
     let rad = degrees.to_radians();
     let rotate_x_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
@@ -195,7 +293,7 @@ fn rotate_around_x(m: &[f64; 16], degrees: f64) -> [f64; 16] {
 }
 
 // Rotates a transformation matrix around the Y axis by the given degrees
-fn rotate_around_y(m: &[f64; 16], degrees: f64) -> [f64; 16] {
+fn rotate_around_y(m: &Matrix, degrees: f64) -> Matrix {
     let rad = degrees.to_radians();
     let rotate_y_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
@@ -224,7 +322,7 @@ fn rotate_around_y(m: &[f64; 16], degrees: f64) -> [f64; 16] {
 }
 
 // Rotates a transformation matrix around the Z axis by the given degrees
-fn rotate_around_z(m: &[f64; 16], degrees: f64) -> [f64; 16] {
+fn rotate_around_z(m: &Matrix, degrees: f64) -> Matrix {
     let rad = degrees.to_radians();
     let rotate_z_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
@@ -253,7 +351,7 @@ fn rotate_around_z(m: &[f64; 16], degrees: f64) -> [f64; 16] {
 }
 
 // Scales a transformation matrix by the given X, Y, and Z values
-fn scale(m: &[f64; 16], x: f64, y: f64, z: f64) -> [f64; 16] {
+fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
     let scale_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   x, 0.0, 0.0, 0.0,
@@ -321,7 +419,7 @@ unsafe fn set_up_operation(op: &'static OperationType, t: i32, f: i32, x: f64, y
 }
 
 // Transform the XYZ co-ordinates using the values from the transformation matrix
-fn transform(m: &[f64; 16], p: Point) -> Point {
+fn transform(m: &Matrix, p: Point) -> Point {
     let top0 = m[0];
     let top1 = m[1];
     let top2 = m[2];
@@ -348,7 +446,7 @@ fn transform(m: &[f64; 16], p: Point) -> Point {
 }
 
 // Translates (moves) a transformation matrix by the given X, Y and Z values
-fn translate(m: &[f64; 16], translate_x: f64, translate_y: f64, translate_z: f64) -> [f64; 16] {
+fn translate(m: &Matrix, translate_x: f64, translate_y: f64, translate_z: f64) -> Matrix {
     let translate_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   1.0, 0.0, 0.0, translate_x,
