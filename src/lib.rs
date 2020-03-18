@@ -146,23 +146,24 @@ fn matrix_mult(op_matrix: Vec<f64>, m: Vec<f64>) -> Vec<f64> {
 
 // Rotates a transformation matrix around the X axis by the given degrees
 fn rotate_around_x(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+    let rad = degrees.to_radians();
     let rotate_x_matrix = vec![
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
         //   1.0, 0.0, 0.0, 0.0,
-        //   0.0, degrees.cos(), -degrees.sin(), 0.0,
-        //   0.0, degrees.sin(), degrees.cos(), 0.0,
+        //   0.0, rad.cos(), -rad.sin(), 0.0,
+        //   0.0, rad.sin(), rad.cos(), 0.0,
         //   0.0, 0.0, 0.0, 1.0,
         1.0,
         0.0,
         0.0,
         0.0,
         0.0,
-        degrees.cos(),
-        -degrees.sin(),
+        rad.cos(),
+        -rad.sin(),
         0.0,
         0.0,
-        degrees.sin(),
-        degrees.cos(),
+        rad.sin(),
+        rad.cos(),
         0.0,
         0.0,
         0.0,
@@ -174,23 +175,24 @@ fn rotate_around_x(m: Vec<f64>, degrees: f64) -> Vec<f64> {
 
 // Rotates a transformation matrix around the Y axis by the given degrees
 fn rotate_around_y(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+    let rad = degrees.to_radians();
     let rotate_y_matrix = vec![
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
-        //   degrees.cos(), 0.0, degrees.sin(), 0.0,
+        //   rad.cos(), 0.0, rad.sin(), 0.0,
         //   0.0, 1.0, 0.0, 0.0,
-        //   -degrees.sin(), 0.0, degrees.cos(), 0.0,
+        //   -rad.sin(), 0.0, rad.cos(), 0.0,
         //   0.0, 0.0, 0.0, 1.0,
-        degrees.cos(),
+        rad.cos(),
         0.0,
-        degrees.sin(),
+        rad.sin(),
         0.0,
         0.0,
         1.0,
         0.0,
         0.0,
-        -degrees.sin(),
+        -rad.sin(),
         0.0,
-        degrees.cos(),
+        rad.cos(),
         0.0,
         0.0,
         0.0,
@@ -202,18 +204,19 @@ fn rotate_around_y(m: Vec<f64>, degrees: f64) -> Vec<f64> {
 
 // Rotates a transformation matrix around the Z axis by the given degrees
 fn rotate_around_z(m: Vec<f64>, degrees: f64) -> Vec<f64> {
+    let rad = degrees.to_radians();
     let rotate_z_matrix = vec![
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
-        //   degrees.cos(), -degrees.sin(), 0.0, 0.0,
-        //   degrees.sin(), degrees.cos(), 0.0, 0.0,
+        //   rad.cos(), -rad.sin(), 0.0, 0.0,
+        //   rad.sin(), rad.cos(), 0.0, 0.0,
         //   0.0, 0.0, 1.0, 0.0,
         //   0.0, 0.0, 0.0, 1.0,
-        degrees.cos(),
-        -degrees.sin(),
+        rad.cos(),
+        -rad.sin(),
         0.0,
         0.0,
-        degrees.sin(),
-        degrees.cos(),
+        rad.sin(),
+        rad.cos(),
         0.0,
         0.0,
         0.0,
