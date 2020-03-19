@@ -83,31 +83,43 @@ fn document() -> web_sys::Document {
         .expect("should have a document on window")
 }
 
-fn body() -> web_sys::HtmlElement {
-    document().body().expect("document should have a body")
+fn canvas() -> web_sys::HtmlCanvasElement {
+    document()
+        .get_element_by_id("mycanvas")
+        .unwrap()
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .unwrap()
 }
 
 // Called when the wasm module is instantiated
 #[wasm_bindgen]
-pub fn wasm_main() -> Result<(), JsValue> {
-    // Use `web_sys`'s global `window` function to get a handle on the global window object.
-    let window = web_sys::window().expect("no global `window` exists");
-    let document = window.document().expect("should have a document on window");
-
-    let canvas = document.get_element_by_id("mycanvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
-
-    // Print some info to the console log
+pub fn wasm_main() {
+    let canvas = canvas();
     let width = canvas.width() as f64;
     let height = canvas.height() as f64;
-    web_sys::console::log_2(&"Width: %s".into(), &width.into());
-    web_sys::console::log_2(&"Height: %s".into(), &height.into());
 
-    let context = canvas
-        .get_context("2d")?
-        .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()?;
-        // .dyn_into::<WebGlRenderingContext>()?; //
+    // Print some info to the console log
+    web_sys::console::log_2(&"Width: %s".into(), &width.into());
+    web_sys::console::log_2(&"2Height: %s".into(), &height.into());
+
+    // Set up the render loop
+    let f = Rc::new(RefCell::new(None));
+    let g = f.clone();
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        render_frame(f.borrow().as_ref().unwrap());
+        req_anim_frame(f.borrow().as_ref().unwrap());
+    }) as Box<dyn FnMut()>));
+    req_anim_frame(g.borrow().as_ref().unwrap());
+}
+
+// Do the rendering here
+fn render_frame(z: &Closure<dyn FnMut()>) {
+    let canvas = canvas();
+    let width = canvas.width() as f64;
+    let height = canvas.height() as f64;
+
+    let context = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
+    // .dyn_into::<WebGlRenderingContext>()?; //
 
     // Clear the background
     web_sys::console::log_1(&"Clearing the background".into());
@@ -116,7 +128,7 @@ pub fn wasm_main() -> Result<(), JsValue> {
 
     // Draw some lines
     web_sys::console::log_1(&"Drawing the border".into());
-    context.set_stroke_style(&"black".into());
+    context.set_stroke_style(&"blue".into());
     context.begin_path();
     context.move_to(0.0, 0.0);
     context.line_to(width - 1.0, 0.0);
@@ -124,28 +136,11 @@ pub fn wasm_main() -> Result<(), JsValue> {
     context.line_to(0.0, height - 1.0);
     context.line_to(0.0, 0.0);
     context.stroke();
-
-    // Set up the render loop
-    let f = Rc::new(RefCell::new(None));
-    let g = f.clone();
-    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        render_frame();
-
-        // Schedule ourself for another requestAnimationFrame callback
-        req_anim_frame(window.clone(), f.borrow().as_ref().unwrap());
-    }) as Box<dyn FnMut()>));
-
-    Ok(())
-}
-
-// Do the rendering here
-fn render_frame() {
-    // ...
 }
 
 // The web_sys bindings (so far) only seem capable of calling request_animation_frame() with a closure :/
-fn req_anim_frame(win: web_sys::Window, z: &Closure<dyn FnMut()>) {
-    win
+fn req_anim_frame(z: &Closure<dyn FnMut()>) {
+    window()
         .request_animation_frame(z.as_ref().unchecked_ref())
         .expect("should register `requestAnimationFrame` OK");
 }
