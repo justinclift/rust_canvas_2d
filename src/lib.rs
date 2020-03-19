@@ -1,4 +1,7 @@
-// use js_sys::WebAssembly;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+// use js_sys::{WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 // use web_sys::{WebGlProgram, WebGlRenderingContext, WebGlShader};
@@ -69,12 +72,28 @@ static mut OP_TEXT: String = String::new();
 static mut QUEUE_OP: &OperationType = &OperationType::NOTHING;
 static mut POINT_COUNTER: i32 = 0;
 
+// * Helper functions, as the web_sys pieces don't seem capable of being stored in globals *
+fn window() -> web_sys::Window {
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn document() -> web_sys::Document {
+    window()
+        .document()
+        .expect("should have a document on window")
+}
+
+fn body() -> web_sys::HtmlElement {
+    document().body().expect("document should have a body")
+}
+
 // Called when the wasm module is instantiated
-#[wasm_bindgen(start)]
-pub fn main() -> Result<(), JsValue> {
+#[wasm_bindgen]
+pub fn wasm_main() -> Result<(), JsValue> {
     // Use `web_sys`'s global `window` function to get a handle on the global window object.
     let window = web_sys::window().expect("no global `window` exists");
     let document = window.document().expect("should have a document on window");
+
     let canvas = document.get_element_by_id("mycanvas").unwrap();
     let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
 
@@ -106,7 +125,29 @@ pub fn main() -> Result<(), JsValue> {
     context.line_to(0.0, 0.0);
     context.stroke();
 
+    // Set up the render loop
+    let f = Rc::new(RefCell::new(None));
+    let g = f.clone();
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        render_frame();
+
+        // Schedule ourself for another requestAnimationFrame callback
+        req_anim_frame(window.clone(), f.borrow().as_ref().unwrap());
+    }) as Box<dyn FnMut()>));
+
     Ok(())
+}
+
+// Do the rendering here
+fn render_frame() {
+    // ...
+}
+
+// The web_sys bindings (so far) only seem capable of calling request_animation_frame() with a closure :/
+fn req_anim_frame(win: web_sys::Window, z: &Closure<dyn FnMut()>) {
+    win
+        .request_animation_frame(z.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
 }
 
 // Returns an object whose points have been transformed into 3D world space XYZ co-ordinates.  Also assigns a number
