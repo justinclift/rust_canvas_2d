@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wasm-bindgen = "0.2.59"
-js-sys = "0.3.36"
+rand = { version = "0.7.3", features = ["wasm-bindgen"] }
 
 [dependencies.web-sys]
 version = "0.3.36"

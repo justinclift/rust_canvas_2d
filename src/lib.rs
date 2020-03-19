@@ -1,6 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+extern crate rand;
+use rand::Rng;
+
 // use js_sys::{WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -94,13 +97,22 @@ fn canvas() -> web_sys::HtmlCanvasElement {
 // Called when the wasm module is instantiated
 #[wasm_bindgen]
 pub fn wasm_main() {
+    let width = window().inner_width().unwrap().as_f64().unwrap();
+    let height = window().inner_height().unwrap().as_f64().unwrap();
     let canvas = canvas();
-    let width = canvas.width() as f64;
-    let height = canvas.height() as f64;
+    canvas.set_attribute("width", &width.to_string());
+    canvas.set_attribute("height", &height.to_string());
 
     // Print some info to the console log
-    web_sys::console::log_2(&"Width: %s".into(), &width.into());
-    web_sys::console::log_2(&"2Height: %s".into(), &height.into());
+    // web_sys::console::log_2(&"Width attribute: %s".into(), &width_string.into());
+    // web_sys::console::log_2(&"Height attribute: %s".into(), &height_string.into());
+    // web_sys::console::log_2(&"Width: %s".into(), &width.into());
+    // web_sys::console::log_2(&"Height: %s".into(), &height.into());
+
+    // Clear the background
+    let context = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
+    context.set_fill_style(&"white".into());
+    context.fill_rect(0.0, 0.0, width, height);
 
     // Set up the render loop
     let f = Rc::new(RefCell::new(None));
@@ -121,20 +133,19 @@ fn render_frame(z: &Closure<dyn FnMut()>) {
     let context = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
     // .dyn_into::<WebGlRenderingContext>()?; //
 
-    // Clear the background
-    web_sys::console::log_1(&"Clearing the background".into());
-    context.set_fill_style(&"white".into());
-    context.fill_rect(0.0, 0.0, width, height);
+    // Generate random start and end points
+    let mut rnd = rand::thread_rng();
+    let x1 = rnd.gen_range(2.0, width - 2.0);
+    let x2 = rnd.gen_range(2.0, width - 2.0);
+    let y1 = rnd.gen_range(2.0, height - 2.0);
+    let y2 = rnd.gen_range(2.0, height - 2.0);
 
     // Draw some lines
-    web_sys::console::log_1(&"Drawing the border".into());
-    context.set_stroke_style(&"blue".into());
+    let rand_colour_string = format!("rgb({}, {}, {})", rnd.gen_range(0, 255), rnd.gen_range(0, 255), rnd.gen_range(0, 255));
+    context.set_stroke_style(&rand_colour_string.into());
     context.begin_path();
-    context.move_to(0.0, 0.0);
-    context.line_to(width - 1.0, 0.0);
-    context.line_to(width - 1.0, height - 1.0);
-    context.line_to(0.0, height - 1.0);
-    context.line_to(0.0, 0.0);
+    context.move_to(x1, y1);
+    context.line_to(x2, y2);
     context.stroke();
 }
 
