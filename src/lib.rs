@@ -127,8 +127,18 @@ pub fn wasm_main() {
 // Do the rendering here
 fn render_frame(z: &Closure<dyn FnMut()>) {
     let canvas = canvas();
-    let width = canvas.width() as f64;
-    let height = canvas.height() as f64;
+    let mut width = canvas.width() as f64;
+    let mut height = canvas.height() as f64;
+
+    // Handle window resizing
+    let curBodyW = window().inner_width().unwrap().as_f64().unwrap();
+    let curBodyH = window().inner_height().unwrap().as_f64().unwrap();
+    if curBodyW != width || curBodyH != height {
+        width = curBodyW;
+        height = curBodyH;
+        canvas.set_attribute("width", &width.to_string());
+        canvas.set_attribute("height", &height.to_string());
+    }
 
     let context = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
     // .dyn_into::<WebGlRenderingContext>()?; //
