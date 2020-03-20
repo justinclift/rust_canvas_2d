@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 extern crate rand;
 use rand::Rng;
+use std::cmp;
 
 // use js_sys::{WebAssembly};
 use wasm_bindgen::prelude::*;
@@ -110,9 +111,9 @@ pub fn wasm_main() {
     // web_sys::console::log_2(&"Height: %s".into(), &height.into());
 
     // Clear the background
-    let context = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
-    context.set_fill_style(&"white".into());
-    context.fill_rect(0.0, 0.0, width, height);
+    let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
+    ctx.set_fill_style(&"white".into());
+    ctx.fill_rect(0.0, 0.0, width, height);
 
     // Set up the render loop
     let f = Rc::new(RefCell::new(None));
@@ -140,23 +141,76 @@ fn render_frame(z: &Closure<dyn FnMut()>) {
         canvas.set_attribute("height", &height.to_string());
     }
 
-    let context = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
+    let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
     // .dyn_into::<WebGlRenderingContext>()?; //
 
-    // Generate random start and end points
-    let mut rnd = rand::thread_rng();
-    let x1 = rnd.gen_range(2.0, width - 2.0);
-    let x2 = rnd.gen_range(2.0, width - 2.0);
-    let y1 = rnd.gen_range(2.0, height - 2.0);
-    let y2 = rnd.gen_range(2.0, height - 2.0);
+    // Setup useful variables
+    let border = 2.0;
+    let gap = 3.0;
+    let left = border + gap;
+    let top = border + gap;
+    let graphWidth = width * 0.75;
+    let graphHeight = height - 1.0;
+    let centerX= graphWidth / 2.0;
+    let centerY = graphHeight / 2.0;
 
-    // Draw some lines
-    let rand_colour_string = format!("rgb({}, {}, {})", rnd.gen_range(0, 255), rnd.gen_range(0, 255), rnd.gen_range(0, 255));
-    context.set_stroke_style(&rand_colour_string.into());
-    context.begin_path();
-    context.move_to(x1, y1);
-    context.line_to(x2, y2);
-    context.stroke();
+    // Clear the background
+    ctx.set_fill_style(&"white".into());
+    ctx.fill_rect(0.0, 0.0, width, height);
+
+    // Save the current graphics state - no clip region currently defined - as the default
+    // ctx.save();
+
+    // Set the clip region so drawing only occurs in the display area
+    ctx.begin_path();
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(graphWidth, 0.0);
+    ctx.line_to(graphWidth, height);
+    ctx.line_to(0.0, height);
+    ctx.clip();
+
+    // * Draw grid lines *
+
+    let step = width.min(height) / 30.0;
+    ctx.set_stroke_style(&"rgb(220, 220, 220)".into());
+
+    // We use while loops here, because Rust doesn't seem able to iterate using an f64 step. eg .step_by(step)
+    // At least not yet: "the trait `std::iter::Step` is not implemented for `f64`"
+
+    // Vertical dashed lines
+    let mut i = left;
+    while i < graphWidth-step {
+        ctx.begin_path();
+        ctx.move_to(i+step, top);
+        ctx.line_to(i+step, graphHeight);
+        ctx.stroke();
+        i += step;
+    }
+
+    // Horizontal dashed lines
+    i = top;
+    while i < graphHeight-step {
+        ctx.begin_path();
+        ctx.move_to(left, i+step);
+        ctx.line_to(graphWidth-border, i+step);
+        ctx.stroke();
+        i += step;
+    }
+
+    // // Generate random start and end points
+    // let mut rnd = rand::thread_rng();
+    // let x1 = rnd.gen_range(2.0, width - 2.0);
+    // let x2 = rnd.gen_range(2.0, width - 2.0);
+    // let y1 = rnd.gen_range(2.0, height - 2.0);
+    // let y2 = rnd.gen_range(2.0, height - 2.0);
+    //
+    // // Draw some lines
+    // let rand_colour_string = format!("rgb({}, {}, {})", rnd.gen_range(0, 255), rnd.gen_range(0, 255), rnd.gen_range(0, 255));
+    // context.set_stroke_style(&rand_colour_string.into());
+    // context.begin_path();
+    // context.move_to(x1, y1);
+    // context.line_to(x2, y2);
+    // context.stroke();
 }
 
 // The web_sys bindings (so far) only seem capable of calling request_animation_frame() with a closure :/
