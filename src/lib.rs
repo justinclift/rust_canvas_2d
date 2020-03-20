@@ -1,9 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-
-extern crate rand;
-use rand::Rng;
-use std::cmp;
+use std::collections::HashMap;
 
 // use js_sys::{WebAssembly};
 use wasm_bindgen::prelude::*;
@@ -24,6 +21,7 @@ enum OperationType {
     TRANSLATE,
 }
 
+#[derive(Clone)]
 struct Point {
     num: i32,
     x: f64,
@@ -34,22 +32,23 @@ struct Point {
 type Edge = Vec<i32>;
 type Surface = Vec<i32>;
 
+#[derive(Clone)]
 struct Object {
-    c: String,       // Colour of the object
-    p: Vec<Point>,   // List of point (vertices) in the object
-    e: Vec<Edge>,    // List of points to connect by edges
-    s: Vec<Surface>, // List of points to connect in order, to create a surface
-    mid: Point, // The mid point of the object.  Used for calculating object draw order in a very simple way
+    colour: String, // Colour of the object
+    points: Vec<Point>, // List of point (vertices) in the object
+    edges: Vec<Edge>, // List of points to connect by edges
+    surfaces: Vec<Surface>, // List of points to connect in order, to create a surface
+    mid_point: Point, // The mid point of the object.  Used for calculating object draw order in a very simple way
 }
 
 impl Object {
     fn new() -> Object {
         Object {
-            c: "".to_string(),
-            p: Vec::new(),
-            e: Vec::new(),
-            s: Vec::new(),
-            mid: Point {
+            colour: String::new(),
+            points: Vec::new(),
+            edges: Vec::new(),
+            surfaces: Vec::new(),
+            mid_point: Point {
                 num: 0,
                 x: 0.0,
                 y: 0.0,
@@ -58,6 +57,33 @@ impl Object {
         }
     }
 }
+
+// struct PaintOrder {
+//     mid_z: f64, // Z depth of an object's mid point
+//     name: String
+// }
+//
+// impl PaintOrder {
+//     fn String(&self) -> String {
+//         format!("Name: {}, Mid point: {}", self.name, self.mid_z)
+//     }
+// }
+//
+// type PaintOrderSlice = Vec<PaintOrder>;
+//
+// impl PaintOrderSlice {
+//     fn Len(&self) -> usize {
+//         self.len()
+//     }
+//
+//     fn Swap(&self, i: i32, j: i32) {
+//         (self[i], self[j]) = (self[j], self[i]);
+//     }
+//
+//     fn Less(&self, i: i32, j: i32) -> bool {
+//         self[i].mid_z < self[j].mid_z
+//     }
+// }
 
 type Matrix = [f64; 16];
 
@@ -95,7 +121,7 @@ fn canvas() -> web_sys::HtmlCanvasElement {
         .unwrap()
 }
 
-// Called when the wasm module is instantiated
+// Main setup
 #[wasm_bindgen]
 pub fn wasm_main() {
     let width = window().inner_width().unwrap().as_f64().unwrap();
@@ -119,24 +145,24 @@ pub fn wasm_main() {
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        render_frame(f.borrow().as_ref().unwrap());
+        render_frame();
         req_anim_frame(f.borrow().as_ref().unwrap());
     }) as Box<dyn FnMut()>));
     req_anim_frame(g.borrow().as_ref().unwrap());
 }
 
 // Do the rendering here
-fn render_frame(z: &Closure<dyn FnMut()>) {
+fn render_frame() {
     let canvas = canvas();
     let mut width = canvas.width() as f64;
     let mut height = canvas.height() as f64;
 
     // Handle window resizing
-    let curBodyW = window().inner_width().unwrap().as_f64().unwrap();
-    let curBodyH = window().inner_height().unwrap().as_f64().unwrap();
-    if curBodyW != width || curBodyH != height {
-        width = curBodyW;
-        height = curBodyH;
+    let current_body_width = window().inner_width().unwrap().as_f64().unwrap();
+    let current_body_height = window().inner_height().unwrap().as_f64().unwrap();
+    if current_body_width != width || current_body_height != height {
+        width = current_body_width;
+        height = current_body_height;
         canvas.set_attribute("width", &width.to_string());
         canvas.set_attribute("height", &height.to_string());
     }
@@ -149,10 +175,10 @@ fn render_frame(z: &Closure<dyn FnMut()>) {
     let gap = 3.0;
     let left = border + gap;
     let top = border + gap;
-    let graphWidth = width * 0.75;
-    let graphHeight = height - 1.0;
-    let centerX= graphWidth / 2.0;
-    let centerY = graphHeight / 2.0;
+    let graph_width = width * 0.75;
+    let graph_height = height - 1.0;
+    let center_x= graph_width / 2.0;
+    let center_y = graph_height / 2.0;
 
     // Clear the background
     ctx.set_fill_style(&"white".into());
@@ -164,8 +190,8 @@ fn render_frame(z: &Closure<dyn FnMut()>) {
     // Set the clip region so drawing only occurs in the display area
     ctx.begin_path();
     ctx.move_to(0.0, 0.0);
-    ctx.line_to(graphWidth, 0.0);
-    ctx.line_to(graphWidth, height);
+    ctx.line_to(graph_width, 0.0);
+    ctx.line_to(graph_width, height);
     ctx.line_to(0.0, height);
     ctx.clip();
 
@@ -179,22 +205,122 @@ fn render_frame(z: &Closure<dyn FnMut()>) {
 
     // Vertical dashed lines
     let mut i = left;
-    while i < graphWidth-step {
+    while i < graph_width-step {
         ctx.begin_path();
         ctx.move_to(i+step, top);
-        ctx.line_to(i+step, graphHeight);
+        ctx.line_to(i+step, graph_height);
         ctx.stroke();
         i += step;
     }
 
     // Horizontal dashed lines
     i = top;
-    while i < graphHeight-step {
+    while i < graph_height-step {
         ctx.begin_path();
         ctx.move_to(left, i+step);
-        ctx.line_to(graphWidth-border, i+step);
+        ctx.line_to(graph_width-border, i+step);
         ctx.stroke();
         i += step;
+    }
+
+    // The point objects
+    let object1 = Object {
+        colour: "lightblue".into(),
+        points: vec![
+            Point {num: 0, x: 0.0, y: 1.75, z: 1.0}, // Point 0 for this object
+            Point {num: 1, x: 1.5, y: -1.75, z: 1.0}, // Point 1 for this object
+            Point {num: 2, x: -1.5, y: -1.75, z: 1.0}, // etc
+            Point {num: 3, x: 0.0, y: 0.0, z: 1.75},
+            ],
+        edges: vec![
+            vec![0, 1], // Connect point 0 to point 1 to define an edge
+            vec![0, 2], // Connect point 0 to point 2 to define an edge
+            vec![1, 2], // Connect point 1 to point 2 to define an edge
+            vec![0, 3], // etc
+            vec![1, 3],
+            vec![2, 3],
+            ],
+        surfaces: vec![
+            vec![0, 1, 3], // Connect edge 0, 1, and 3 to define a surface
+            vec![0, 2, 3], // etc
+            vec![0, 1, 2],
+            vec![1, 2, 3],
+            ],
+        mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
+    };
+
+    // The empty world space
+    let point_counter = 1;
+    let mut world_space = HashMap::new();
+    let (z, _point_counter) = import_object(&object1, point_counter, 5.0, 3.0, 0.0);
+    world_space.insert("ob1", &z);
+
+    // // Sort the objects by mid point Z depth order
+    // let order = paintOrderSlice;
+    // for i, j := range worldSpace {
+    //     order = append(order, paintOrder{name: i, midZ: j.Mid.Z})
+    // }
+    // sort.Sort(paintOrderSlice(order))
+
+    // Draw the objects, in Z depth order
+    let mut point_x;
+    let mut point_y;
+    let num_worlds = world_space.len();
+    for _i in 0..num_worlds {
+        let obj = &object1;
+        // let obj = match world_space.get(&"obj1") {
+        //     Some(&thing) => thing,
+        //     _ => (),
+        // };
+        // let obj = world_space[i];
+        //     let o = world_space[order[i].name];
+
+        // Draw the surfaces
+        ctx.set_fill_style(&format!("{}", obj.colour).into());
+        for surf in obj.surfaces.iter() {
+            for (m, n) in surf.iter().enumerate() {
+                point_x = obj.points[*n as usize].x;
+                point_y = obj.points[*n as usize].y;
+                if m == 0 {
+                    ctx.begin_path();
+                    ctx.move_to(center_x + (point_x * step), center_y + ((point_y * step) * -1.0));
+                } else {
+                    ctx.line_to(center_x + (point_x * step), center_y + ((point_y * step) * -1.0));
+                }
+            }
+            ctx.close_path();
+            ctx.fill();
+        }
+
+        // Draw the edges
+        ctx.set_stroke_style(&"black".into());
+        ctx.set_fill_style(&"black".into());
+        ctx.set_line_width(1.0);
+        let mut point1_x;
+        let mut point1_y;
+        let mut point2_x;
+        let mut point2_y;
+        for edge in obj.edges.iter() {
+            point1_x = obj.points[edge[0 as usize] as usize].x;
+            point1_y = obj.points[edge[0 as usize] as usize].y;
+            point2_x = obj.points[edge[1 as usize] as usize].x;
+            point2_y = obj.points[edge[1 as usize] as usize].y;
+            ctx.begin_path();
+            ctx.move_to(center_x+(point1_x*step), center_y+((point1_y*step)*-1.0));
+            ctx.line_to(center_x+(point2_x*step), center_y+((point2_y*step)*-1.0));
+            ctx.stroke();
+        }
+
+        // Draw the points on the graph
+        let mut px;
+        let mut py;
+        for point in obj.points.iter() {
+            px = center_x + (point.x * step);
+            py = center_y + ((point.y * step) * -1.0);
+            ctx.begin_path();
+            ctx.arc(px, py, 1.0, 0.0, 2.0 * std::f64::consts::PI);
+            ctx.fill();
+        }
     }
 
     // // Generate random start and end points
@@ -222,7 +348,7 @@ fn req_anim_frame(z: &Closure<dyn FnMut()>) {
 
 // Returns an object whose points have been transformed into 3D world space XYZ co-ordinates.  Also assigns a number
 // to each point
-unsafe fn import_object(ob: Object, x: f64, y: f64, z: f64) -> Object {
+fn import_object(ob: &Object, mut point_counter: i32, x: f64, y: f64, z: f64) -> (Object, i32) {
     // X and Y translation matrix.  Translates the objects into the world space at the given X and Y co-ordinates
     let translate_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
@@ -244,47 +370,47 @@ unsafe fn import_object(ob: Object, x: f64, y: f64, z: f64) -> Object {
         y: 0.0,
         z: 0.0,
     };
-    for j in ob.p.iter() {
-        let pt_x = (translate_matrix[0] * j.x) // 1st col, top
+    for j in ob.points.iter() {
+        pt.x = (translate_matrix[0] * j.x) // 1st col, top
             + (translate_matrix[1] * j.y)
             + (translate_matrix[2] * j.z)
             + (translate_matrix[3] * 1.0);
-        let pt_y = (translate_matrix[4] * j.x) // 1st col, upper middle
+        pt.y = (translate_matrix[4] * j.x) // 1st col, upper middle
             + (translate_matrix[5] * j.y)
             + (translate_matrix[6] * j.z)
             + (translate_matrix[7] * 1.0);
-        let pt_z = (translate_matrix[8] * j.x) // 1st col, lower middle
+        pt.z = (translate_matrix[8] * j.x) // 1st col, lower middle
             + (translate_matrix[9] * j.y)
             + (translate_matrix[10] * j.z)
             + (translate_matrix[11] * 1.0);
-        translated_object.p.push(Point {
-            num: POINT_COUNTER,
-            x: pt_x,
-            y: pt_y,
-            z: pt_z,
+        translated_object.points.push(Point {
+            num: point_counter,
+            x: pt.x,
+            y: pt.y,
+            z: pt.z,
         });
-        mid_x += pt_x;
-        mid_y += pt_y;
-        mid_z += pt_z;
-        POINT_COUNTER += 1;
+        mid_x += pt.x;
+        mid_y += pt.y;
+        mid_z += pt.z;
+        point_counter += 1;
     }
 
     // Determine the mid point for the object
-    let num_pts = ob.p.len() as f64;
-    translated_object.mid.x = mid_x / num_pts;
-    translated_object.mid.y = mid_y / num_pts;
-    translated_object.mid.z = mid_z / num_pts;
+    let num_pts = ob.points.len() as f64;
+    translated_object.mid_point.x = mid_x / num_pts;
+    translated_object.mid_point.y = mid_y / num_pts;
+    translated_object.mid_point.z = mid_z / num_pts;
 
     // Copy the colour, edge, and surface definitions across
-    translated_object.c = ob.c;
-    for j in ob.e.iter() {
-        translated_object.e.push(j.clone());
+    translated_object.colour = ob.colour.clone();
+    for j in ob.edges.iter() {
+        translated_object.edges.push(j.clone());
     }
-    for j in ob.s.iter() {
-        translated_object.s.push(j.clone());
+    for j in ob.surfaces.iter() {
+        translated_object.surfaces.push(j.clone());
     }
 
-    translated_object
+    (translated_object, point_counter)
 }
 
 // Multiplies one matrix by another
@@ -475,7 +601,7 @@ fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
 }
 
 // Set up the details for the transformation operation
-unsafe fn set_up_operation(op: &'static OperationType, t: i32, f: i32, x: f64, y: f64, z: f64) {
+unsafe fn set_up_operation(op: &'static OperationType, _t: i32, f: i32, x: f64, y: f64, z: f64) {
     let queue_parts = f.clone() as f64; // Number of parts to break each transformation into
     TRANSFORM_MATRIX = IDENTITY_MATRIX.clone(); // Reset the transform matrix
     match op {

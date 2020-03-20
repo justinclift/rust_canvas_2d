@@ -327,14 +327,30 @@ async function init(input) {
     imports.wbg.__wbg_fillStyle_d72ab49007d815ac = function(arg0, arg1) {
         getObject(arg0).fillStyle = getObject(arg1);
     };
+    imports.wbg.__wbg_lineWidth_a26616854c39e5e6 = function(arg0, arg1) {
+        getObject(arg0).lineWidth = arg1;
+    };
     imports.wbg.__wbg_beginPath_06a3bee6af57dd8d = function(arg0) {
         getObject(arg0).beginPath();
     };
     imports.wbg.__wbg_clip_8561183d655578de = function(arg0) {
         getObject(arg0).clip();
     };
+    imports.wbg.__wbg_fill_be7300392f284740 = function(arg0) {
+        getObject(arg0).fill();
+    };
     imports.wbg.__wbg_stroke_f2e62ebca12793e8 = function(arg0) {
         getObject(arg0).stroke();
+    };
+    imports.wbg.__wbg_arc_065b5d2d491abafd = function(arg0, arg1, arg2, arg3, arg4, arg5) {
+        try {
+            getObject(arg0).arc(arg1, arg2, arg3, arg4, arg5);
+        } catch (e) {
+            handleError(e)
+        }
+    };
+    imports.wbg.__wbg_closePath_1ee39032ab960e12 = function(arg0) {
+        getObject(arg0).closePath();
     };
     imports.wbg.__wbg_lineTo_72f7b15f12007abe = function(arg0, arg1, arg2) {
         getObject(arg0).lineTo(arg1, arg2);
@@ -433,8 +449,8 @@ async function init(input) {
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_closure_wrapper53 = function(arg0, arg1, arg2) {
-        var ret = makeMutClosure(arg0, arg1, 19, __wbg_adapter_18);
+    imports.wbg.__wbindgen_closure_wrapper66 = function(arg0, arg1, arg2) {
+        var ret = makeMutClosure(arg0, arg1, 24, __wbg_adapter_18);
         return addHeapObject(ret);
     };
 
