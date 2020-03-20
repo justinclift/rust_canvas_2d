@@ -21,6 +21,24 @@ enum OperationType {
     TRANSLATE,
 }
 
+enum KeyVal {
+    KeyNone = 0,
+    KeyMoveRight = 1,
+    KeyMoveLeft = 2,
+    KeyMoveUp = 3,
+    KeyMoveDown = 4,
+    KeyRotateLeft = 5,
+    KeyRotateRight = 6,
+    KeyRotateUp = 7,
+    KeyRotateDown = 8,
+    KeyPageUp = 9,
+    KeyPageDown = 10,
+    KeyHome = 11,
+    KeyEnd = 12,
+    KeyMinus = 13,
+    KeyPlus = 14,
+}
+
 #[derive(Clone)]
 struct Point {
     num: i32,
@@ -85,6 +103,8 @@ impl Object {
 //     }
 // }
 
+const DEBUG: bool = true;
+
 type Matrix = [f64; 16];
 
 // The 4x4 identity matrix
@@ -101,8 +121,11 @@ static mut TRANSFORM_MATRIX: Matrix = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 static mut OP_TEXT: String = String::new();
-static mut QUEUE_OP: &OperationType = &OperationType::NOTHING;
+static mut QUEUE_OP: OperationType = OperationType::NOTHING;
 static mut POINT_COUNTER: i32 = 0;
+static mut HEIGHT: f64 = 0.0;
+static mut STEP_SIZE: f64 = 0.0;
+static mut PREV_KEY: KeyVal = KeyVal::KeyNone;
 
 // * Helper functions, as the web_sys pieces don't seem capable of being stored in globals *
 fn window() -> web_sys::Window {
@@ -151,6 +174,93 @@ pub fn wasm_main() {
         req_anim_frame(f.borrow().as_ref().unwrap());
     }) as Box<dyn FnMut()>));
     req_anim_frame(g.borrow().as_ref().unwrap());
+}
+
+// Simple keyboard handler for catching the arrow, WASD, and numpad keys
+// Key value info can be found here: https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key/Key_Values
+#[wasm_bindgen]
+pub unsafe fn key_press_handler(mut key_val: KeyVal) {
+    if DEBUG {
+        web_sys::console::log_1(format!(&"Key is: {}", key_val).into());
+    }
+
+    // If a key is pressed for a 2nd time in a row, then stop the animated movement
+    if key_val == prevKey && queueOp != OperationType::NOTHING {
+        QUEUE_OP = OperationType::NOTHING;
+        return
+    }
+
+    // The the plus or minus keys were pressed, increase the step size then cause the current operation to be recalculated
+    match key_val {
+        KeyVal::KEY_MINUS => {
+            STEP_SIZE -= 5.0;
+            key_val = PREV_KEY.clone();
+        },
+        KeyVal::KEY_PLUS => {
+            STEP_SIZE += 5.0;
+            key_val = PREV_KEY.clone();
+        },
+        _ => {}
+    }
+
+    // Set up translate and rotate operations
+    match key_val {
+        KeyVal::KEY_MOVE_LEFT => {
+            set_up_operation(OperationType::TRANSLATE, 50, 12, STEP_SIZE / 2.0, 0.0, 0.0);
+        },
+        KeyVal::KEY_MOVE_RIGHT => {
+            set_up_operation(OperationType::TRANSLATE, 50, 12, -STEP_SIZE/2.0, 0.0, 0.0);
+        },
+        KeyVal::KEY_MOVE_UP => {
+            set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, STEP_SIZE/2.0, 0.0);
+        },
+        KeyVal::KEY_MOVE_DOWN => {
+            set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, -STEP_SIZE/2.0, 0.0);
+        },
+        KeyVal::KEY_ROTATE_LEFT => {
+            set_up_operation(OperationType::ROTATE, 50, 12, 0.0, -STEP_SIZE, 0.0);
+        },
+        KeyVal::KEY_ROTATE_RIGHT => {
+            set_up_operation(OperationType::ROTATE, 50, 12, 0.0, STEP_SIZE, 0.0);
+        },
+        KeyVal::KEY_ROTATE_UP => {
+            set_up_operation(OperationType::ROTATE, 50, 12, -STEP_SIZE, 0.0, 0.0);
+        },
+        KeyVal::KEY_ROTATE_DOWN => {
+            set_up_operation(OperationType::ROTATE, 50, 12, STEP_SIZE, 0.0, 0.0);
+        },
+        KeyVal::KEY_PAGE_UP => {
+            set_up_operation(OperationType::ROTATE, 50, 12, -STEP_SIZE, STEP_SIZE, 0.0);
+        },
+        KeyVal::KEY_PAGE_DOWN => {
+            set_up_operation(OperationType::ROTATE, 50, 12, STEP_SIZE, STEP_SIZE, 0.0);
+        },
+        KeyVal::KEY_HOME => {
+            set_up_operation(OperationType::ROTATE, 50, 12, -STEP_SIZE, -STEP_SIZE, 0.0);
+        },
+        KeyVal::KEY_END => {
+            set_up_operation(OperationType::ROTATE, 50, 12, STEP_SIZE, -STEP_SIZE, 0.0);
+        },
+        _ => {}
+    }
+    prev_key = key_val;
+}
+
+// Simple mouse handler watching for people moving the mouse over the source code link
+#[wasm_bindgen]
+pub unsafe fn move_handler(cx: i32, cy: i32) {
+    let client_x = cx as f64;
+    let client_y = cy as f64;
+    if DEBUG {
+        web_sys::console::log_3(&"client_x: %s, client_y: %s".into(), client_x.into(), client_y.into());
+    }
+
+    // If the mouse is over the source code link, let the frame renderer know to draw the url in bold
+    if (client_x > graph_width) && (client_y > HEIGHT - 40.0) {
+        high_light_source = true;
+    } else {
+        high_light_source = false;
+    }
 }
 
 // Do the rendering here
@@ -400,22 +510,6 @@ fn render_frame() {
 
     // Restore the default graphics state (eg no clip region)
     ctx.restore();
-
-
-    // // Generate random start and end points
-    // let mut rnd = rand::thread_rng();
-    // let x1 = rnd.gen_range(2.0, width - 2.0);
-    // let x2 = rnd.gen_range(2.0, width - 2.0);
-    // let y1 = rnd.gen_range(2.0, height - 2.0);
-    // let y2 = rnd.gen_range(2.0, height - 2.0);
-    //
-    // // Draw some lines
-    // let rand_colour_string = format!("rgb({}, {}, {})", rnd.gen_range(0, 255), rnd.gen_range(0, 255), rnd.gen_range(0, 255));
-    // context.set_stroke_style(&rand_colour_string.into());
-    // context.begin_path();
-    // context.move_to(x1, y1);
-    // context.line_to(x2, y2);
-    // context.stroke();
 }
 
 // The web_sys bindings (so far) only seem capable of calling request_animation_frame() with a closure :/
@@ -680,7 +774,7 @@ fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
 }
 
 // Set up the details for the transformation operation
-unsafe fn set_up_operation(op: &'static OperationType, _t: i32, f: i32, x: f64, y: f64, z: f64) {
+unsafe fn set_up_operation(op: OperationType, _t: i32, f: i32, x: f64, y: f64, z: f64) {
     let queue_parts = f.clone() as f64; // Number of parts to break each transformation into
     TRANSFORM_MATRIX = IDENTITY_MATRIX.clone(); // Reset the transform matrix
     match op {
