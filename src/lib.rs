@@ -92,6 +92,8 @@ const IDENTITY_MATRIX: Matrix = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
 
+const SOURCE_URL: &str = "https://github.com/justinclift/rust_canvas_2d_test1";
+
 // * Globals *
 
 // Initialise the transform matrix to the identity matrix
@@ -185,7 +187,7 @@ fn render_frame() {
     ctx.fill_rect(0.0, 0.0, width, height);
 
     // Save the current graphics state - no clip region currently defined - as the default
-    // ctx.save();
+    ctx.save();
 
     // Set the clip region so drawing only occurs in the display area
     ctx.begin_path();
@@ -248,6 +250,8 @@ fn render_frame() {
             ],
         mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
     };
+
+    let high_light_source = false;
 
     // The empty world space
     let point_counter = 1;
@@ -322,6 +326,81 @@ fn render_frame() {
             ctx.fill();
         }
     }
+
+    // Set the clip region so drawing only occurs in the display area
+    ctx.restore();
+    ctx.save();
+    ctx.begin_path();
+    ctx.move_to(graph_width, 0.0);
+    ctx.line_to(width, 0.0);
+    ctx.line_to(width, height);
+    ctx.line_to(graph_width, height);
+    ctx.clip();
+
+    // Draw the text describing the current operation
+    let mut text_y = top + 20.0;
+    let mut op_text = "";
+    ctx.set_fill_style(&"black".into());
+    ctx.set_font(&"bold 14px serif");
+    ctx.fill_text("Operation:", graph_width + 20.0, text_y);
+    text_y += 20.0;
+    ctx.set_font(&"14px sans-serif");
+    ctx.fill_text(op_text, graph_width + 20.0, text_y);
+    text_y += 30.0;
+
+    // Add the help text about control keys and mouse zoom
+    ctx.set_fill_style(&"blue".into());
+    ctx.set_font(&"14px sans-serif");
+    ctx.fill_text("Use wasd to move, numpad keys", graph_width + 20.0, text_y);
+    text_y += 20.0;
+    ctx.fill_text("to rotate, mouse wheel to zoom.", graph_width + 20.0, text_y);
+    text_y += 30.0;
+    ctx.fill_text("+ and - keys to change speed.", graph_width + 20.0, text_y);
+    text_y += 30.0;
+    ctx.fill_text("Press a key a 2nd time to", graph_width + 20.0, text_y);
+    text_y += 20.0;
+    ctx.fill_text("stop the current change.", graph_width + 20.0, text_y);
+    text_y += 40.0;
+
+    // Clear the source code link area
+    ctx.set_fill_style(&"white".into());
+    ctx.fill_rect(graph_width + 1.0, graph_height - 55.0, width, height);
+
+    // Add the URL to the source code
+    ctx.set_fill_style(&"black".into());
+    ctx.set_font("bold 14px serif".into());
+    ctx.fill_text("Source code:", graph_width + 20.0, graph_height - 35.0);
+    ctx.set_fill_style(&"blue".into());
+    if high_light_source == true {
+        ctx.set_font("bold 12px sans-serif".into());
+    } else {
+        ctx.set_font("12px sans-serif".into());
+    }
+    ctx.fill_text(SOURCE_URL, graph_width + 20.0, graph_height - 15.0);
+
+    // Draw a border around the graph area
+    ctx.set_line_width(2.0);
+    ctx.set_stroke_style(&"white".into());
+    ctx.begin_path();
+    ctx.move_to(0.0, 0.0);
+    ctx.line_to(width, 0.0);
+    ctx.line_to(width, height);
+    ctx.line_to(0.0, height);
+    ctx.close_path();
+    ctx.stroke();
+    ctx.set_line_width(2.0);
+    ctx.set_stroke_style(&"black".into());
+    ctx.begin_path();
+    ctx.move_to(border, border);
+    ctx.line_to(graph_width, border);
+    ctx.line_to(graph_width, graph_height);
+    ctx.line_to(border, graph_height);
+    ctx.close_path();
+    ctx.stroke();
+
+    // Restore the default graphics state (eg no clip region)
+    ctx.restore();
+
 
     // // Generate random start and end points
     // let mut rnd = rand::thread_rng();

@@ -330,6 +330,9 @@ async function init(input) {
     imports.wbg.__wbg_lineWidth_a26616854c39e5e6 = function(arg0, arg1) {
         getObject(arg0).lineWidth = arg1;
     };
+    imports.wbg.__wbg_font_166fb4da12864962 = function(arg0, arg1, arg2) {
+        getObject(arg0).font = getStringFromWasm0(arg1, arg2);
+    };
     imports.wbg.__wbg_beginPath_06a3bee6af57dd8d = function(arg0) {
         getObject(arg0).beginPath();
     };
@@ -360,6 +363,19 @@ async function init(input) {
     };
     imports.wbg.__wbg_fillRect_bb3ca120d93cd2f5 = function(arg0, arg1, arg2, arg3, arg4) {
         getObject(arg0).fillRect(arg1, arg2, arg3, arg4);
+    };
+    imports.wbg.__wbg_restore_ab138a82f4cf2425 = function(arg0) {
+        getObject(arg0).restore();
+    };
+    imports.wbg.__wbg_save_23abe31b0333d310 = function(arg0) {
+        getObject(arg0).save();
+    };
+    imports.wbg.__wbg_fillText_4b1f4a60dad97732 = function(arg0, arg1, arg2, arg3, arg4) {
+        try {
+            getObject(arg0).fillText(getStringFromWasm0(arg1, arg2), arg3, arg4);
+        } catch (e) {
+            handleError(e)
+        }
     };
     imports.wbg.__wbg_instanceof_HtmlCanvasElement_69ef8df401e5d26d = function(arg0) {
         var ret = getObject(arg0) instanceof HTMLCanvasElement;
@@ -449,7 +465,7 @@ async function init(input) {
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_closure_wrapper66 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper70 = function(arg0, arg1, arg2) {
         var ret = makeMutClosure(arg0, arg1, 24, __wbg_adapter_18);
         return addHeapObject(ret);
     };
