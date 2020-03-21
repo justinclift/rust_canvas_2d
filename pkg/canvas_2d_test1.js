@@ -205,7 +205,7 @@ function makeMutClosure(arg0, arg1, dtor, f) {
     real.original = state;
     return real;
 }
-function __wbg_adapter_18(arg0, arg1) {
+function __wbg_adapter_20(arg0, arg1) {
     wasm._dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hcbde585eb7c53a33(arg0, arg1);
 }
 
@@ -213,6 +213,21 @@ function __wbg_adapter_18(arg0, arg1) {
 */
 export function wasm_main() {
     wasm.wasm_main();
+}
+
+/**
+* @param {number} key_val
+*/
+export function key_press_handler(key_val) {
+    wasm.key_press_handler(key_val);
+}
+
+/**
+* @param {number} cx
+* @param {number} cy
+*/
+export function move_handler(cx, cy) {
+    wasm.move_handler(cx, cy);
 }
 
 function handleError(e) {
@@ -258,6 +273,17 @@ async function init(input) {
     }
     const imports = {};
     imports.wbg = {};
+    imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
+        takeObject(arg0);
+    };
+    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
+        var ret = getStringFromWasm0(arg0, arg1);
+        return addHeapObject(ret);
+    };
+    imports.wbg.__wbindgen_number_new = function(arg0) {
+        var ret = arg0;
+        return addHeapObject(ret);
+    };
     imports.wbg.__wbindgen_cb_drop = function(arg0) {
         const obj = takeObject(arg0).original;
         if (obj.cnt-- == 1) {
@@ -266,13 +292,6 @@ async function init(input) {
         }
         var ret = false;
         return ret;
-    };
-    imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
-        takeObject(arg0);
-    };
-    imports.wbg.__wbindgen_string_new = function(arg0, arg1) {
-        var ret = getStringFromWasm0(arg0, arg1);
-        return addHeapObject(ret);
     };
     imports.wbg.__wbg_instanceof_Window_04bba8b54ef81db0 = function(arg0) {
         var ret = getObject(arg0) instanceof Window;
@@ -316,6 +335,12 @@ async function init(input) {
         } catch (e) {
             handleError(e)
         }
+    };
+    imports.wbg.__wbg_log_5920a3a561b09595 = function(arg0, arg1) {
+        console.log(getObject(arg0), getObject(arg1));
+    };
+    imports.wbg.__wbg_log_a3ede2436a661743 = function(arg0, arg1, arg2) {
+        console.log(getObject(arg0), getObject(arg1), getObject(arg2));
     };
     imports.wbg.__wbg_instanceof_CanvasRenderingContext2d_a3cc87f343a7e4b9 = function(arg0) {
         var ret = getObject(arg0) instanceof CanvasRenderingContext2D;
@@ -465,8 +490,8 @@ async function init(input) {
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_closure_wrapper70 = function(arg0, arg1, arg2) {
-        var ret = makeMutClosure(arg0, arg1, 24, __wbg_adapter_18);
+    imports.wbg.__wbindgen_closure_wrapper112 = function(arg0, arg1, arg2) {
+        var ret = makeMutClosure(arg0, arg1, 46, __wbg_adapter_20);
         return addHeapObject(ret);
     };
 

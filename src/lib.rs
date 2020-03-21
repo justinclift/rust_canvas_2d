@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::HashMap;
+use lazy_static::lazy_static;
+use std::sync::{Arc, Mutex};
 
 // use js_sys::{WebAssembly};
 use wasm_bindgen::prelude::*;
@@ -103,29 +105,36 @@ impl Object {
 //     }
 // }
 
-const DEBUG: bool = true;
-
-type Matrix = [f64; 16];
-
 // The 4x4 identity matrix
+type Matrix = [f64; 16];
 const IDENTITY_MATRIX: Matrix = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
-
 const SOURCE_URL: &str = "https://github.com/justinclift/rust_canvas_2d_test1";
+const DEBUG: bool = true;
 
-// * Globals *
+thread_local! {
+    pub static CANVAS: web_sys::HtmlCanvasElement = document()
+        .get_element_by_id("mycanvas")
+        .unwrap()
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .unwrap();
+}
 
-// Initialise the transform matrix to the identity matrix
-static mut TRANSFORM_MATRIX: Matrix = [
-    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-];
-static mut OP_TEXT: String = String::new();
-static mut QUEUE_OP: OperationType = OperationType::NOTHING;
-static mut POINT_COUNTER: i32 = 0;
-static mut HEIGHT: f64 = 0.0;
-static mut STEP_SIZE: f64 = 0.0;
-static mut PREV_KEY: KeyVal = KeyVal::KeyNone;
+lazy_static! {
+    // Initialise some shared state variables (aka globals)
+    static ref GRAPH_WIDTH: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
+    static ref HEIGHT: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
+    static ref HIGHLIGHT_SOURCE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref OP_TEXT: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    static ref POINT_COUNTER: Arc<Mutex<i32>> = Arc::new(Mutex::new(0));
+    static ref PREV_KEY: Arc<Mutex<KeyVal>> = Arc::new(Mutex::new(KeyVal::KeyNone));
+    static ref QUEUE_OP: Arc<Mutex<OperationType>> = Arc::new(Mutex::new(OperationType::NOTHING));
+    static ref STEP_SIZE: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
+
+    // Initialise the transformation matrix from the identity matrix
+    static ref TRANSFORM_MATRIX: Arc<Mutex<Matrix>> = Arc::new(Mutex::new(IDENTITY_MATRIX.clone()));
+}
 
 // * Helper functions, as the web_sys pieces don't seem capable of being stored in globals *
 fn window() -> web_sys::Window {
@@ -138,378 +147,385 @@ fn document() -> web_sys::Document {
         .expect("should have a document on window")
 }
 
-fn canvas() -> web_sys::HtmlCanvasElement {
-    document()
-        .get_element_by_id("mycanvas")
-        .unwrap()
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .unwrap()
-}
+// fn canvas() -> web_sys::HtmlCanvasElement {
+//     document()
+//         .get_element_by_id("mycanvas")
+//         .unwrap()
+//         .dyn_into::<web_sys::HtmlCanvasElement>()
+//         .unwrap()
+// }
 
 // Main setup
 #[wasm_bindgen]
 pub fn wasm_main() {
     let width = window().inner_width().unwrap().as_f64().unwrap();
     let height = window().inner_height().unwrap().as_f64().unwrap();
-    let canvas = canvas();
-    canvas.set_attribute("width", &width.to_string());
-    canvas.set_attribute("height", &height.to_string());
 
-    // Print some info to the console log
-    // web_sys::console::log_2(&"Width attribute: %s".into(), &width_string.into());
-    // web_sys::console::log_2(&"Height attribute: %s".into(), &height_string.into());
-    // web_sys::console::log_2(&"Width: %s".into(), &width.into());
-    // web_sys::console::log_2(&"Height: %s".into(), &height.into());
+    CANVAS.with(|f| {
+        let canvas = &*f;
+        canvas.set_attribute("width", &width.to_string());
+        canvas.set_attribute("height", &height.to_string());
 
-    // Clear the background
-    let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
-    ctx.set_fill_style(&"white".into());
-    ctx.fill_rect(0.0, 0.0, width, height);
+        // Print some info to the console log
+        // web_sys::console::log_2(&"Width attribute: %s".into(), &width_string.into());
+        // web_sys::console::log_2(&"Height attribute: %s".into(), &height_string.into());
+        // web_sys::console::log_2(&"Width: %s".into(), &width.into());
+        // web_sys::console::log_2(&"Height: %s".into(), &height.into());
 
-    // Set up the render loop
-    let f = Rc::new(RefCell::new(None));
-    let g = f.clone();
-    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        render_frame();
-        req_anim_frame(f.borrow().as_ref().unwrap());
-    }) as Box<dyn FnMut()>));
-    req_anim_frame(g.borrow().as_ref().unwrap());
+        // Clear the background
+        let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
+        ctx.set_fill_style(&"white".into());
+        ctx.fill_rect(0.0, 0.0, width, height);
+
+        // Set up the render loop
+        let f = Rc::new(RefCell::new(None));
+        let g = f.clone();
+        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+            render_frame();
+            req_anim_frame(f.borrow().as_ref().unwrap());
+        }) as Box<dyn FnMut()>));
+        req_anim_frame(g.borrow().as_ref().unwrap());
+    });
 }
 
 // Simple keyboard handler for catching the arrow, WASD, and numpad keys
 // Key value info can be found here: https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key/Key_Values
 #[wasm_bindgen]
-pub unsafe fn key_press_handler(mut key_val: KeyVal) {
+pub fn key_press_handler(key_val: i32) {
     if DEBUG {
-        web_sys::console::log_1(format!(&"Key is: {}", key_val).into());
+        web_sys::console::log_2(&"Key is: {}".into(), &key_val.into());
     }
 
-    // If a key is pressed for a 2nd time in a row, then stop the animated movement
-    if key_val == prevKey && queueOp != OperationType::NOTHING {
-        QUEUE_OP = OperationType::NOTHING;
-        return
-    }
+    // // If a key is pressed for a 2nd time in a row, then stop the animated movement
+    // if key_val == prevKey && queueOp != OperationType::NOTHING {
+    //     set_queue_op(OperationType::NOTHING);
+    //     // QUEUE_OP = OperationType::NOTHING;
+    //     return
+    // }
 
-    // The the plus or minus keys were pressed, increase the step size then cause the current operation to be recalculated
-    match key_val {
-        KeyVal::KEY_MINUS => {
-            STEP_SIZE -= 5.0;
-            key_val = PREV_KEY.clone();
-        },
-        KeyVal::KEY_PLUS => {
-            STEP_SIZE += 5.0;
-            key_val = PREV_KEY.clone();
-        },
-        _ => {}
+    // If the plus or minus keys were pressed, increase the step size then cause the current operation to be recalculated
+    if key_val == KeyVal::KeyMinus as i32 {
+        let mut stp = STEP_SIZE.lock().unwrap();
+        *stp -= 5.0;
+    } else if key_val == KeyVal::KeyPlus as i32 {
+        let mut stp = STEP_SIZE.lock().unwrap();
+        *stp += 5.0;
     }
 
     // Set up translate and rotate operations
-    match key_val {
-        KeyVal::KEY_MOVE_LEFT => {
-            set_up_operation(OperationType::TRANSLATE, 50, 12, STEP_SIZE / 2.0, 0.0, 0.0);
-        },
-        KeyVal::KEY_MOVE_RIGHT => {
-            set_up_operation(OperationType::TRANSLATE, 50, 12, -STEP_SIZE/2.0, 0.0, 0.0);
-        },
-        KeyVal::KEY_MOVE_UP => {
-            set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, STEP_SIZE/2.0, 0.0);
-        },
-        KeyVal::KEY_MOVE_DOWN => {
-            set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, -STEP_SIZE/2.0, 0.0);
-        },
-        KeyVal::KEY_ROTATE_LEFT => {
-            set_up_operation(OperationType::ROTATE, 50, 12, 0.0, -STEP_SIZE, 0.0);
-        },
-        KeyVal::KEY_ROTATE_RIGHT => {
-            set_up_operation(OperationType::ROTATE, 50, 12, 0.0, STEP_SIZE, 0.0);
-        },
-        KeyVal::KEY_ROTATE_UP => {
-            set_up_operation(OperationType::ROTATE, 50, 12, -STEP_SIZE, 0.0, 0.0);
-        },
-        KeyVal::KEY_ROTATE_DOWN => {
-            set_up_operation(OperationType::ROTATE, 50, 12, STEP_SIZE, 0.0, 0.0);
-        },
-        KeyVal::KEY_PAGE_UP => {
-            set_up_operation(OperationType::ROTATE, 50, 12, -STEP_SIZE, STEP_SIZE, 0.0);
-        },
-        KeyVal::KEY_PAGE_DOWN => {
-            set_up_operation(OperationType::ROTATE, 50, 12, STEP_SIZE, STEP_SIZE, 0.0);
-        },
-        KeyVal::KEY_HOME => {
-            set_up_operation(OperationType::ROTATE, 50, 12, -STEP_SIZE, -STEP_SIZE, 0.0);
-        },
-        KeyVal::KEY_END => {
-            set_up_operation(OperationType::ROTATE, 50, 12, STEP_SIZE, -STEP_SIZE, 0.0);
-        },
-        _ => {}
+    if key_val == KeyVal::KeyMoveLeft as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::TRANSLATE, 50, 12, *stp / 2.0, 0.0, 0.0);
+    } else if key_val == KeyVal::KeyMoveRight as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::TRANSLATE, 50, 12, -*stp/2.0, 0.0, 0.0);
+    } else if key_val == KeyVal::KeyMoveUp as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, *stp/2.0, 0.0);
+    } else if key_val == KeyVal::KeyMoveDown as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, -*stp/2.0, 0.0);
+    } else if key_val == KeyVal::KeyRotateLeft as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, 0.0, -*stp, 0.0);
+    } else if key_val == KeyVal::KeyRotateRight as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, 0.0, *stp, 0.0);
+    } else if key_val == KeyVal::KeyRotateUp as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, -*stp, 0.0, 0.0);
+    } else if key_val == KeyVal::KeyRotateDown as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, *stp, 0.0, 0.0);
+    } else if key_val == KeyVal::KeyPageUp as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, -*stp, *stp, 0.0);
+    } else if key_val == KeyVal::KeyPageDown as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, *stp, *stp, 0.0);
+    } else if key_val == KeyVal::KeyHome as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, -*stp, -*stp, 0.0);
+    } else if key_val == KeyVal::KeyEnd as i32 {
+        let stp = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 50, 12, *stp, -*stp, 0.0);
     }
-    prev_key = key_val;
+    // prev_key = key_val;
 }
 
 // Simple mouse handler watching for people moving the mouse over the source code link
 #[wasm_bindgen]
-pub unsafe fn move_handler(cx: i32, cy: i32) {
+pub fn move_handler(cx: i32, cy: i32) {
     let client_x = cx as f64;
     let client_y = cy as f64;
     if DEBUG {
-        web_sys::console::log_3(&"client_x: %s, client_y: %s".into(), client_x.into(), client_y.into());
+        web_sys::console::log_3(&"client_x: %s, client_y: %s".into(), &client_x.into(), &client_y.into());
     }
 
     // If the mouse is over the source code link, let the frame renderer know to draw the url in bold
-    if (client_x > graph_width) && (client_y > HEIGHT - 40.0) {
-        high_light_source = true;
+    let height = HEIGHT.lock().unwrap();
+    let graph_width = GRAPH_WIDTH.lock().unwrap();
+    if (client_x > *graph_width) && (client_y > *height - 40.0) {
+        let mut high_light_source = HIGHLIGHT_SOURCE.lock().unwrap();
+        *high_light_source = true;
     } else {
-        high_light_source = false;
+        let mut high_light_source = HIGHLIGHT_SOURCE.lock().unwrap();
+        *high_light_source = false;
     }
 }
 
 // Do the rendering here
 fn render_frame() {
-    let canvas = canvas();
-    let mut width = canvas.width() as f64;
-    let mut height = canvas.height() as f64;
+    CANVAS.with(|f| {
+        let canvas = &*f;
+        let mut width = canvas.width() as f64;
+        let mut height = canvas.height() as f64;
 
-    // Handle window resizing
-    let current_body_width = window().inner_width().unwrap().as_f64().unwrap();
-    let current_body_height = window().inner_height().unwrap().as_f64().unwrap();
-    if current_body_width != width || current_body_height != height {
-        width = current_body_width;
-        height = current_body_height;
-        canvas.set_attribute("width", &width.to_string());
-        canvas.set_attribute("height", &height.to_string());
-    }
-
-    let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
-    // .dyn_into::<WebGlRenderingContext>()?; //
-
-    // Setup useful variables
-    let border = 2.0;
-    let gap = 3.0;
-    let left = border + gap;
-    let top = border + gap;
-    let graph_width = width * 0.75;
-    let graph_height = height - 1.0;
-    let center_x= graph_width / 2.0;
-    let center_y = graph_height / 2.0;
-
-    // Clear the background
-    ctx.set_fill_style(&"white".into());
-    ctx.fill_rect(0.0, 0.0, width, height);
-
-    // Save the current graphics state - no clip region currently defined - as the default
-    ctx.save();
-
-    // Set the clip region so drawing only occurs in the display area
-    ctx.begin_path();
-    ctx.move_to(0.0, 0.0);
-    ctx.line_to(graph_width, 0.0);
-    ctx.line_to(graph_width, height);
-    ctx.line_to(0.0, height);
-    ctx.clip();
-
-    // * Draw grid lines *
-
-    let step = width.min(height) / 30.0;
-    ctx.set_stroke_style(&"rgb(220, 220, 220)".into());
-
-    // We use while loops here, because Rust doesn't seem able to iterate using an f64 step. eg .step_by(step)
-    // At least not yet: "the trait `std::iter::Step` is not implemented for `f64`"
-
-    // Vertical dashed lines
-    let mut i = left;
-    while i < graph_width-step {
-        ctx.begin_path();
-        ctx.move_to(i+step, top);
-        ctx.line_to(i+step, graph_height);
-        ctx.stroke();
-        i += step;
-    }
-
-    // Horizontal dashed lines
-    i = top;
-    while i < graph_height-step {
-        ctx.begin_path();
-        ctx.move_to(left, i+step);
-        ctx.line_to(graph_width-border, i+step);
-        ctx.stroke();
-        i += step;
-    }
-
-    // The point objects
-    let object1 = Object {
-        colour: "lightblue".into(),
-        points: vec![
-            Point {num: 0, x: 0.0, y: 1.75, z: 1.0}, // Point 0 for this object
-            Point {num: 1, x: 1.5, y: -1.75, z: 1.0}, // Point 1 for this object
-            Point {num: 2, x: -1.5, y: -1.75, z: 1.0}, // etc
-            Point {num: 3, x: 0.0, y: 0.0, z: 1.75},
-            ],
-        edges: vec![
-            vec![0, 1], // Connect point 0 to point 1 to define an edge
-            vec![0, 2], // Connect point 0 to point 2 to define an edge
-            vec![1, 2], // Connect point 1 to point 2 to define an edge
-            vec![0, 3], // etc
-            vec![1, 3],
-            vec![2, 3],
-            ],
-        surfaces: vec![
-            vec![0, 1, 3], // Connect edge 0, 1, and 3 to define a surface
-            vec![0, 2, 3], // etc
-            vec![0, 1, 2],
-            vec![1, 2, 3],
-            ],
-        mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
-    };
-
-    let high_light_source = false;
-
-    // The empty world space
-    let point_counter = 1;
-    let mut world_space = HashMap::new();
-    let (z, _point_counter) = import_object(&object1, point_counter, 5.0, 3.0, 0.0);
-    world_space.insert("ob1", &z);
-
-    // // Sort the objects by mid point Z depth order
-    // let order = paintOrderSlice;
-    // for i, j := range worldSpace {
-    //     order = append(order, paintOrder{name: i, midZ: j.Mid.Z})
-    // }
-    // sort.Sort(paintOrderSlice(order))
-
-    // Draw the objects, in Z depth order
-    let mut point_x;
-    let mut point_y;
-    let num_worlds = world_space.len();
-    for _i in 0..num_worlds {
-        let obj = &object1;
-        // let obj = match world_space.get(&"obj1") {
-        //     Some(&thing) => thing,
-        //     _ => (),
-        // };
-        // let obj = world_space[i];
-        //     let o = world_space[order[i].name];
-
-        // Draw the surfaces
-        ctx.set_fill_style(&format!("{}", obj.colour).into());
-        for surf in obj.surfaces.iter() {
-            for (m, n) in surf.iter().enumerate() {
-                point_x = obj.points[*n as usize].x;
-                point_y = obj.points[*n as usize].y;
-                if m == 0 {
-                    ctx.begin_path();
-                    ctx.move_to(center_x + (point_x * step), center_y + ((point_y * step) * -1.0));
-                } else {
-                    ctx.line_to(center_x + (point_x * step), center_y + ((point_y * step) * -1.0));
-                }
-            }
-            ctx.close_path();
-            ctx.fill();
+        // Handle window resizing
+        let current_body_width = window().inner_width().unwrap().as_f64().unwrap();
+        let current_body_height = window().inner_height().unwrap().as_f64().unwrap();
+        if current_body_width != width || current_body_height != height {
+            width = current_body_width;
+            height = current_body_height;
+            canvas.set_attribute("width", &width.to_string());
+            canvas.set_attribute("height", &height.to_string());
         }
 
-        // Draw the edges
-        ctx.set_stroke_style(&"black".into());
-        ctx.set_fill_style(&"black".into());
-        ctx.set_line_width(1.0);
-        let mut point1_x;
-        let mut point1_y;
-        let mut point2_x;
-        let mut point2_y;
-        for edge in obj.edges.iter() {
-            point1_x = obj.points[edge[0 as usize] as usize].x;
-            point1_y = obj.points[edge[0 as usize] as usize].y;
-            point2_x = obj.points[edge[1 as usize] as usize].x;
-            point2_y = obj.points[edge[1 as usize] as usize].y;
+        // Get the 2D context for the canvas
+        let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
+
+        // Setup useful variables
+        let border = 2.0;
+        let gap = 3.0;
+        let left = border + gap;
+        let top = border + gap;
+        let mut graph_width = GRAPH_WIDTH.lock().unwrap();
+        *graph_width = width * 0.75;
+        let graph_height = height - 1.0;
+        let center_x= *graph_width / 2.0;
+        let center_y = graph_height / 2.0;
+
+        // Clear the background
+        ctx.set_fill_style(&"white".into());
+        ctx.fill_rect(0.0, 0.0, width, height);
+
+        // Save the current graphics state - no clip region currently defined - as the default
+        ctx.save();
+
+        // Set the clip region so drawing only occurs in the display area
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(*graph_width, 0.0);
+        ctx.line_to(*graph_width, height);
+        ctx.line_to(0.0, height);
+        ctx.clip();
+
+        // * Draw grid lines *
+
+        let step = width.min(height) / 30.0;
+        ctx.set_stroke_style(&"rgb(220, 220, 220)".into());
+
+        // We use while loops here, because Rust doesn't seem able to iterate using an f64 step. eg .step_by(step)
+        // At least not yet: "the trait `std::iter::Step` is not implemented for `f64`"
+
+        // Vertical dashed lines
+        let mut i = left;
+        while i < *graph_width-step {
             ctx.begin_path();
-            ctx.move_to(center_x+(point1_x*step), center_y+((point1_y*step)*-1.0));
-            ctx.line_to(center_x+(point2_x*step), center_y+((point2_y*step)*-1.0));
+            ctx.move_to(i+step, top);
+            ctx.line_to(i+step, graph_height);
             ctx.stroke();
+            i += step;
         }
 
-        // Draw the points on the graph
-        let mut px;
-        let mut py;
-        for point in obj.points.iter() {
-            px = center_x + (point.x * step);
-            py = center_y + ((point.y * step) * -1.0);
+        // Horizontal dashed lines
+        let mut i = top;
+        while i < graph_height-step {
             ctx.begin_path();
-            ctx.arc(px, py, 1.0, 0.0, 2.0 * std::f64::consts::PI);
-            ctx.fill();
+            ctx.move_to(left, i+step);
+            ctx.line_to(*graph_width-border, i+step);
+            ctx.stroke();
+            i += step;
         }
-    }
 
-    // Set the clip region so drawing only occurs in the display area
-    ctx.restore();
-    ctx.save();
-    ctx.begin_path();
-    ctx.move_to(graph_width, 0.0);
-    ctx.line_to(width, 0.0);
-    ctx.line_to(width, height);
-    ctx.line_to(graph_width, height);
-    ctx.clip();
+        // The point objects
+        let object1 = Object {
+            colour: "lightblue".into(),
+            points: vec![
+                Point {num: 0, x: 0.0, y: 1.75, z: 1.0}, // Point 0 for this object
+                Point {num: 1, x: 1.5, y: -1.75, z: 1.0}, // Point 1 for this object
+                Point {num: 2, x: -1.5, y: -1.75, z: 1.0}, // etc
+                Point {num: 3, x: 0.0, y: 0.0, z: 1.75},
+            ],
+            edges: vec![
+                vec![0, 1], // Connect point 0 to point 1 to define an edge
+                vec![0, 2], // Connect point 0 to point 2 to define an edge
+                vec![1, 2], // Connect point 1 to point 2 to define an edge
+                vec![0, 3], // etc
+                vec![1, 3],
+                vec![2, 3],
+            ],
+            surfaces: vec![
+                vec![0, 1, 3], // Connect edge 0, 1, and 3 to define a surface
+                vec![0, 2, 3], // etc
+                vec![0, 1, 2],
+                vec![1, 2, 3],
+            ],
+            mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
+        };
 
-    // Draw the text describing the current operation
-    let mut text_y = top + 20.0;
-    let mut op_text = "";
-    ctx.set_fill_style(&"black".into());
-    ctx.set_font(&"bold 14px serif");
-    ctx.fill_text("Operation:", graph_width + 20.0, text_y);
-    text_y += 20.0;
-    ctx.set_font(&"14px sans-serif");
-    ctx.fill_text(op_text, graph_width + 20.0, text_y);
-    text_y += 30.0;
+        let high_light_source = false;
 
-    // Add the help text about control keys and mouse zoom
-    ctx.set_fill_style(&"blue".into());
-    ctx.set_font(&"14px sans-serif");
-    ctx.fill_text("Use wasd to move, numpad keys", graph_width + 20.0, text_y);
-    text_y += 20.0;
-    ctx.fill_text("to rotate, mouse wheel to zoom.", graph_width + 20.0, text_y);
-    text_y += 30.0;
-    ctx.fill_text("+ and - keys to change speed.", graph_width + 20.0, text_y);
-    text_y += 30.0;
-    ctx.fill_text("Press a key a 2nd time to", graph_width + 20.0, text_y);
-    text_y += 20.0;
-    ctx.fill_text("stop the current change.", graph_width + 20.0, text_y);
-    text_y += 40.0;
+        // The empty world space
+        let point_counter = 1;
+        let mut world_space = HashMap::new();
+        let (z, _point_counter) = import_object(&object1, point_counter, 5.0, 3.0, 0.0);
+        world_space.insert("ob1", &z);
 
-    // Clear the source code link area
-    ctx.set_fill_style(&"white".into());
-    ctx.fill_rect(graph_width + 1.0, graph_height - 55.0, width, height);
+        // // Sort the objects by mid point Z depth order
+        // let order = paintOrderSlice;
+        // for i, j := range worldSpace {
+        //     order = append(order, paintOrder{name: i, midZ: j.Mid.Z})
+        // }
+        // sort.Sort(paintOrderSlice(order))
 
-    // Add the URL to the source code
-    ctx.set_fill_style(&"black".into());
-    ctx.set_font("bold 14px serif".into());
-    ctx.fill_text("Source code:", graph_width + 20.0, graph_height - 35.0);
-    ctx.set_fill_style(&"blue".into());
-    if high_light_source == true {
-        ctx.set_font("bold 12px sans-serif".into());
-    } else {
-        ctx.set_font("12px sans-serif".into());
-    }
-    ctx.fill_text(SOURCE_URL, graph_width + 20.0, graph_height - 15.0);
+        // Draw the objects, in Z depth order
+        let mut point_x;
+        let mut point_y;
+        let num_worlds = world_space.len();
+        for _i in 0..num_worlds {
+            let obj = &object1;
+            // let obj = match world_space.get(&"obj1") {
+            //     Some(&thing) => thing,
+            //     _ => (),
+            // };
+            // let obj = world_space[i];
+            //     let o = world_space[order[i].name];
 
-    // Draw a border around the graph area
-    ctx.set_line_width(2.0);
-    ctx.set_stroke_style(&"white".into());
-    ctx.begin_path();
-    ctx.move_to(0.0, 0.0);
-    ctx.line_to(width, 0.0);
-    ctx.line_to(width, height);
-    ctx.line_to(0.0, height);
-    ctx.close_path();
-    ctx.stroke();
-    ctx.set_line_width(2.0);
-    ctx.set_stroke_style(&"black".into());
-    ctx.begin_path();
-    ctx.move_to(border, border);
-    ctx.line_to(graph_width, border);
-    ctx.line_to(graph_width, graph_height);
-    ctx.line_to(border, graph_height);
-    ctx.close_path();
-    ctx.stroke();
+            // Draw the surfaces
+            ctx.set_fill_style(&format!("{}", obj.colour).into());
+            for surf in obj.surfaces.iter() {
+                for (m, n) in surf.iter().enumerate() {
+                    point_x = obj.points[*n as usize].x;
+                    point_y = obj.points[*n as usize].y;
+                    if m == 0 {
+                        ctx.begin_path();
+                        ctx.move_to(center_x + (point_x * step), center_y + ((point_y * step) * -1.0));
+                    } else {
+                        ctx.line_to(center_x + (point_x * step), center_y + ((point_y * step) * -1.0));
+                    }
+                }
+                ctx.close_path();
+                ctx.fill();
+            }
 
-    // Restore the default graphics state (eg no clip region)
-    ctx.restore();
+            // Draw the edges
+            ctx.set_stroke_style(&"black".into());
+            ctx.set_fill_style(&"black".into());
+            ctx.set_line_width(1.0);
+            let mut point1_x;
+            let mut point1_y;
+            let mut point2_x;
+            let mut point2_y;
+            for edge in obj.edges.iter() {
+                point1_x = obj.points[edge[0 as usize] as usize].x;
+                point1_y = obj.points[edge[0 as usize] as usize].y;
+                point2_x = obj.points[edge[1 as usize] as usize].x;
+                point2_y = obj.points[edge[1 as usize] as usize].y;
+                ctx.begin_path();
+                ctx.move_to(center_x+(point1_x*step), center_y+((point1_y*step)*-1.0));
+                ctx.line_to(center_x+(point2_x*step), center_y+((point2_y*step)*-1.0));
+                ctx.stroke();
+            }
+
+            // Draw the points on the graph
+            let mut px;
+            let mut py;
+            for point in obj.points.iter() {
+                px = center_x + (point.x * step);
+                py = center_y + ((point.y * step) * -1.0);
+                ctx.begin_path();
+                ctx.arc(px, py, 1.0, 0.0, 2.0 * std::f64::consts::PI);
+                ctx.fill();
+            }
+        }
+
+        // Set the clip region so drawing only occurs in the display area
+        ctx.restore();
+        ctx.save();
+        ctx.begin_path();
+        ctx.move_to(*graph_width, 0.0);
+        ctx.line_to(width, 0.0);
+        ctx.line_to(width, height);
+        ctx.line_to(*graph_width, height);
+        ctx.clip();
+
+        // Draw the text describing the current operation
+        let mut text_y = top + 20.0;
+        ctx.set_fill_style(&"black".into());
+        ctx.set_font(&"bold 14px serif");
+        ctx.fill_text("Operation:", *graph_width + 20.0, text_y);
+        text_y += 20.0;
+        ctx.set_font(&"14px sans-serif");
+        {
+            let op_text = OP_TEXT.lock().unwrap();
+            ctx.fill_text(&*op_text, *graph_width + 20.0, text_y);
+        }
+        text_y += 30.0;
+
+        // Add the help text about control keys and mouse zoom
+        ctx.set_fill_style(&"blue".into());
+        ctx.set_font(&"14px sans-serif");
+        ctx.fill_text("Use wasd to move, numpad keys", *graph_width + 20.0, text_y);
+        text_y += 20.0;
+        ctx.fill_text("to rotate, mouse wheel to zoom.", *graph_width + 20.0, text_y);
+        text_y += 30.0;
+        ctx.fill_text("+ and - keys to change speed.", *graph_width + 20.0, text_y);
+        text_y += 30.0;
+        ctx.fill_text("Press a key a 2nd time to", *graph_width + 20.0, text_y);
+        text_y += 20.0;
+        ctx.fill_text("stop the current change.", *graph_width + 20.0, text_y);
+        text_y += 40.0;
+
+        // Clear the source code link area
+        ctx.set_fill_style(&"white".into());
+        ctx.fill_rect(*graph_width + 1.0, graph_height - 55.0, width, height);
+
+        // Add the URL to the source code
+        ctx.set_fill_style(&"black".into());
+        ctx.set_font("bold 14px serif".into());
+        ctx.fill_text("Source code:", *graph_width + 20.0, graph_height - 35.0);
+        ctx.set_fill_style(&"blue".into());
+        if high_light_source == true {
+            ctx.set_font("bold 12px sans-serif".into());
+        } else {
+            ctx.set_font("12px sans-serif".into());
+        }
+        ctx.fill_text(SOURCE_URL, *graph_width + 20.0, graph_height - 15.0);
+
+        // Draw a border around the graph area
+        ctx.set_line_width(2.0);
+        ctx.set_stroke_style(&"white".into());
+        ctx.begin_path();
+        ctx.move_to(0.0, 0.0);
+        ctx.line_to(width, 0.0);
+        ctx.line_to(width, height);
+        ctx.line_to(0.0, height);
+        ctx.close_path();
+        ctx.stroke();
+        ctx.set_line_width(2.0);
+        ctx.set_stroke_style(&"black".into());
+        ctx.begin_path();
+        ctx.move_to(border, border);
+        ctx.line_to(*graph_width, border);
+        ctx.line_to(*graph_width, graph_height);
+        ctx.line_to(border, graph_height);
+        ctx.close_path();
+        ctx.stroke();
+
+        // Restore the default graphics state (eg no clip region)
+        ctx.restore();
+    });
 }
 
 // The web_sys bindings (so far) only seem capable of calling request_animation_frame() with a closure :/
@@ -774,23 +790,25 @@ fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
 }
 
 // Set up the details for the transformation operation
-unsafe fn set_up_operation(op: OperationType, _t: i32, f: i32, x: f64, y: f64, z: f64) {
+fn set_up_operation(op: OperationType, _t: i32, f: i32, x: f64, y: f64, z: f64) {
     let queue_parts = f.clone() as f64; // Number of parts to break each transformation into
-    TRANSFORM_MATRIX = IDENTITY_MATRIX.clone(); // Reset the transform matrix
+    let mut transformation_matrix = TRANSFORM_MATRIX.lock().unwrap(); // Unlock the mutex
+    *transformation_matrix = IDENTITY_MATRIX.clone(); // Reset the transform matrix
     match op {
         // Rotate the objects in world space
         OperationType::ROTATE => {
             // Divide the desired angle into a small number of parts
             if x != 0.0 {
-                TRANSFORM_MATRIX = rotate_around_x(&TRANSFORM_MATRIX, x / queue_parts);
+                *transformation_matrix = rotate_around_x(&*transformation_matrix, x / queue_parts);
             }
             if y != 0.0 {
-                TRANSFORM_MATRIX = rotate_around_y(&TRANSFORM_MATRIX, y / queue_parts);
+                *transformation_matrix = rotate_around_y(&*transformation_matrix, y / queue_parts);
             }
             if z != 0.0 {
-                TRANSFORM_MATRIX = rotate_around_z(&TRANSFORM_MATRIX, z / queue_parts);
+                *transformation_matrix = rotate_around_z(&*transformation_matrix, z / queue_parts);
             }
-            OP_TEXT = format!("Rotation. X: {} Y: {} Z: {}", x, y, z);
+            let mut op_text = OP_TEXT.lock().unwrap(); // Unlocks the mutex
+            *op_text = format!("Rotation. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
         }
 
         // Scale the objects in world space
@@ -807,25 +825,29 @@ unsafe fn set_up_operation(op: OperationType, _t: i32, f: i32, x: f64, y: f64, z
             if z != 1.0 {
                 z_part = ((z - 1.0) / queue_parts) + 1.0;
             }
-            TRANSFORM_MATRIX = scale(&TRANSFORM_MATRIX, x_part, y_part, z_part);
-            OP_TEXT = format!("Scale. X: {} Y: {} Z: {}", x, y, z);
+            *transformation_matrix = scale(&*transformation_matrix, x_part, y_part, z_part);
+            let mut op_text = OP_TEXT.lock().unwrap(); // Unlocks the mutex
+            *op_text = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
         }
 
         // Translate (move) the objects in world space
         OperationType::TRANSLATE => {
-            TRANSFORM_MATRIX = translate(
-                &TRANSFORM_MATRIX,
+            *transformation_matrix = translate(
+                &*transformation_matrix,
                 x / queue_parts,
                 y / queue_parts,
                 z / queue_parts,
             );
-            OP_TEXT = format!("Translate. X: {} Y: {} Z: {}", x, y, z);
+            let mut op_text = OP_TEXT.lock().unwrap(); // Unlocks the mutex
+            *op_text = format!("Translate. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
         }
 
         // Nothing to do
         OperationType::NOTHING => {}
     }
-    QUEUE_OP = op;
+
+    let mut queue_op = QUEUE_OP.lock().unwrap(); // Unlocks the mutex
+    *queue_op = op; // Sets the new value
 }
 
 // Transform the XYZ co-ordinates using the values from the transformation matrix
