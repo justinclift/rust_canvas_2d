@@ -16,6 +16,7 @@ use wasm_bindgen::JsCast;
 //     u_matrix: web_sys::WebGlUniformLocation,
 // }
 
+#[derive(PartialEq)]
 enum OperationType {
     NOTHING,
     ROTATE,
@@ -128,7 +129,7 @@ lazy_static! {
     static ref HIGHLIGHT_SOURCE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref OP_TEXT: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     static ref POINT_COUNTER: Arc<Mutex<i32>> = Arc::new(Mutex::new(0));
-    static ref PREV_KEY: Arc<Mutex<KeyVal>> = Arc::new(Mutex::new(KeyVal::KeyNone));
+    static ref PREV_KEY: Arc<Mutex<i32>> = Arc::new(Mutex::new(KeyVal::KeyNone as i32));
     static ref QUEUE_OP: Arc<Mutex<OperationType>> = Arc::new(Mutex::new(OperationType::NOTHING));
     static ref STEP_SIZE: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
 
@@ -196,12 +197,15 @@ pub fn key_press_handler(key_val: i32) {
         web_sys::console::log_2(&"Key is: {}".into(), &key_val.into());
     }
 
-    // // If a key is pressed for a 2nd time in a row, then stop the animated movement
-    // if key_val == prevKey && queueOp != OperationType::NOTHING {
-    //     set_queue_op(OperationType::NOTHING);
-    //     // QUEUE_OP = OperationType::NOTHING;
-    //     return
-    // }
+    // If a key is pressed for a 2nd time in a row, then stop the animated movement
+    {
+        let prev_key = PREV_KEY.lock().unwrap();
+        let mut queue_op = QUEUE_OP.lock().unwrap();
+        if key_val == *prev_key && *queue_op != OperationType::NOTHING {
+            *queue_op = OperationType::NOTHING;
+            return
+        }
+    }
 
     // If the plus or minus keys were pressed, increase the step size then cause the current operation to be recalculated
     if key_val == KeyVal::KeyMinus as i32 {
@@ -250,7 +254,8 @@ pub fn key_press_handler(key_val: i32) {
         let stp = STEP_SIZE.lock().unwrap();
         set_up_operation(OperationType::ROTATE, 50, 12, *stp, -*stp, 0.0);
     }
-    // prev_key = key_val;
+    let mut prev_key = PREV_KEY.lock().unwrap();
+    *prev_key = key_val;
 }
 
 // Simple mouse handler watching for people moving the mouse over the source code link
