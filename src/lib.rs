@@ -179,7 +179,6 @@ pub fn wasm_main() {
 
         let z = import_object(&OBJECT1, -1.0, 3.0, 0.0);
         (*world_space).insert("ob1 copy".to_string(), z);
-        // worldSpace["ob1 copy"] = import_object(object1, -1.0, 3.0, 0.0);
         // worldSpace["ob2"] = import_object(object2, 5.0, -3.0, 1.0);
         // worldSpace["ob3"] = import_object(object3, -1.0, 0.0, -1.0);
     }
@@ -284,6 +283,34 @@ pub fn apply_transformation() {
     *queue_parts -= 1;
 }
 
+// Simple mouse handler watching for people clicking on the source code link
+#[wasm_bindgen]
+pub fn click_handler(cx: i32, cy: i32) {
+    let client_x = cx as f64;
+    let client_y = cy as f64;
+    let mut height;
+    let mut graph_width;
+    {
+        let h = HEIGHT.lock().unwrap();
+        height = *h;
+        let g = GRAPH_WIDTH.lock().unwrap();
+        graph_width = *g;
+    }
+    if DEBUG {
+        web_sys::console::log_2(&"client_x: ".into(), &client_x.into());
+        web_sys::console::log_2(&"client_y: ".into(), &client_y.into());
+        if client_x > graph_width && client_y > (height - 40.0) {
+            web_sys::console::log_1(&"URL hit!".into());
+        }
+    }
+
+    // If the user clicks the source code URL area, open the URL
+    if client_x > graph_width && client_y > (height - 40.0) {
+        let w = web_sys::window().unwrap();
+        w.open_with_url_and_target(SOURCE_URL, "_blank");
+    }
+}
+
 // Simple keyboard handler for catching the arrow, WASD, and numpad keys
 // Key value info can be found here: https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key/Key_Values
 #[wasm_bindgen]
@@ -365,7 +392,8 @@ pub fn move_handler(cx: i32, cy: i32) {
     let client_x = cx as f64;
     let client_y = cy as f64;
     if DEBUG {
-        web_sys::console::log_3(&"client_x: %s, client_y: %s".into(), &client_x.into(), &client_y.into());
+        web_sys::console::log_2(&"client_x: ".into(), &client_x.into());
+        web_sys::console::log_2(&"client_y: ".into(), &client_y.into());
     }
 
     // If the mouse is over the source code link, let the frame renderer know to draw the url in bold
@@ -378,6 +406,19 @@ pub fn move_handler(cx: i32, cy: i32) {
         let mut high_light_source = HIGHLIGHT_SOURCE.lock().unwrap();
         *high_light_source = false;
     }
+}
+
+// Simple mouse handler watching for mouse wheel events
+// Reference info can be found here: https://developer.mozilla.org/en-US/docs/Web/Events/wheel
+#[wasm_bindgen]
+pub fn wheel_handler(val: i32) {
+    let wheel_delta = val as f64;
+    let scale_size = 1.0 + (wheel_delta / 5.0);
+    if DEBUG {
+        web_sys::console::log_2(&"wheel_delta: ".into(), &wheel_delta.into());
+        web_sys::console::log_2(&"scale_size: ".into(), &scale_size.into());
+    }
+    set_up_operation(OperationType::SCALE, 12, scale_size, scale_size, scale_size);
 }
 
 // Do the rendering here
@@ -859,6 +900,7 @@ fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
         //   0.0, 0.0, 0.0, 1.0,
         x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
     ];
+    web_sys::console::log_1(&"Calculating scale()".into());
     matrix_mult(&scale_matrix, m)
 }
 
@@ -899,8 +941,13 @@ fn set_up_operation(op: OperationType, f: i32, x: f64, y: f64, z: f64) {
                 z_part = ((z - 1.0) / queue_parts) + 1.0;
             }
             *transformation_matrix = scale(&*transformation_matrix, x_part, y_part, z_part);
+
+            let foo = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
+            web_sys::console::log_1(&foo.clone().into());
+
             let mut op_text = OP_TEXT.lock().unwrap(); // Unlocks the mutex
-            *op_text = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
+            *op_text = foo;
+            // *op_text = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
         }
 
         // Translate (move) the objects in world space

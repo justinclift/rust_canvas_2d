@@ -20,11 +20,6 @@ features = [
   'Document',
   'Element',
   'HtmlCanvasElement',
-  'WebGlBuffer',
-  'WebGlRenderingContext',
-  'WebGlProgram',
-  'WebGlShader',
   'Window',
   'console',
-  'WebGlUniformLocation',
 ]

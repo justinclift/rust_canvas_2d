@@ -29,11 +29,16 @@
       //
       // Note that the name `wasm_bindgen` can be configured with the
       // `--no-modules-global` CLI flag
-      const { wasm_main, apply_transformation, key_press_handler, move_handler } = wasm_bindgen;
+      const { wasm_main, apply_transformation, click_handler, key_press_handler, move_handler, wheel_handler } = wasm_bindgen;
 
       // Apply the matrix transformations
       function applyTransformation() {
         apply_transformation();
+      }
+
+      // Pass mouse clicks through to the wasm handler
+      function clickHandler(evt) {
+        click_handler(evt.clientX, evt.clientY);
       }
 
       // Pass key presses through to the wasm handler
@@ -115,6 +120,11 @@
         move_handler(evt.clientX, evt.clientY);
       }
 
+      // Pass mouse wheel events through to its wasm handler
+      function wheelHandler(evt) {
+        wheel_handler(evt.deltaY);
+      }
+
       // Launch the wasm file
       async function run() {
         await wasm_bindgen('./pkg/canvas_2d_test1_bg.wasm');
@@ -122,7 +132,9 @@
 
         // Set up event handlers
         document.addEventListener("keydown", keyPressHandler);
+        document.getElementById("mycanvas").addEventListener("mousedown", clickHandler);
         document.getElementById("mycanvas").addEventListener("mousemove", moveHandler);
+        document.getElementById("mycanvas").addEventListener("wheel", wheelHandler);
 
         // Set up basic render loop
         setInterval(function() {
