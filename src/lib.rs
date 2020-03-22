@@ -3,18 +3,8 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
 use std::sync::{Arc, Mutex};
-
-// use js_sys::{WebAssembly};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-// use web_sys::{WebGlProgram, WebGlRenderingContext, WebGlShader};
-
-// #[wasm_bindgen]
-// pub struct Renderer {
-//     context: web_sys::WebGlRenderingContext,
-//     program: web_sys::WebGlProgram,
-//     u_matrix: web_sys::WebGlUniformLocation,
-// }
 
 #[derive(PartialEq)]
 enum OperationType {
@@ -42,7 +32,7 @@ enum KeyVal {
     KeyPlus = 14,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct Point {
     num: i32,
     x: f64,
@@ -130,11 +120,41 @@ lazy_static! {
     static ref OP_TEXT: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
     static ref POINT_COUNTER: Arc<Mutex<i32>> = Arc::new(Mutex::new(0));
     static ref PREV_KEY: Arc<Mutex<i32>> = Arc::new(Mutex::new(KeyVal::KeyNone as i32));
+    static ref QUEUE_PARTS: Arc<Mutex<i32>> = Arc::new(Mutex::new(1));
     static ref QUEUE_OP: Arc<Mutex<OperationType>> = Arc::new(Mutex::new(OperationType::NOTHING));
-    static ref STEP_SIZE: Arc<Mutex<f64>> = Arc::new(Mutex::new(0.0));
+    static ref STEP_SIZE: Arc<Mutex<f64>> = Arc::new(Mutex::new(15.0));
+
+    // The empty world space
+    static ref WORLD_SPACE: Arc<Mutex<HashMap<String, Object>>> = Arc::new(Mutex::new(HashMap::new()));
 
     // Initialise the transformation matrix from the identity matrix
     static ref TRANSFORM_MATRIX: Arc<Mutex<Matrix>> = Arc::new(Mutex::new(IDENTITY_MATRIX.clone()));
+
+    // The point objects
+    static ref OBJECT1: Object = Object {
+        colour: "lightblue".into(),
+        points: vec![
+            Point {num: 0, x: 0.0, y: 1.75, z: 1.0}, // Point 0 for this object
+            Point {num: 1, x: 1.5, y: -1.75, z: 1.0}, // Point 1 for this object
+            Point {num: 2, x: -1.5, y: -1.75, z: 1.0}, // etc
+            Point {num: 3, x: 0.0, y: 0.0, z: 1.75},
+        ],
+        edges: vec![
+            vec![0, 1], // Connect point 0 to point 1 to define an edge
+            vec![0, 2], // Connect point 0 to point 2 to define an edge
+            vec![1, 2], // Connect point 1 to point 2 to define an edge
+            vec![0, 3], // etc
+            vec![1, 3],
+            vec![2, 3],
+        ],
+        surfaces: vec![
+            vec![0, 1, 3], // Connect edge 0, 1, and 3 to define a surface
+            vec![0, 2, 3], // etc
+            vec![0, 1, 2],
+            vec![1, 2, 3],
+        ],
+        mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
+    };
 }
 
 // * Helper functions, as the web_sys pieces don't seem capable of being stored in globals *
@@ -148,51 +168,126 @@ fn document() -> web_sys::Document {
         .expect("should have a document on window")
 }
 
-// fn canvas() -> web_sys::HtmlCanvasElement {
-//     document()
-//         .get_element_by_id("mycanvas")
-//         .unwrap()
-//         .dyn_into::<web_sys::HtmlCanvasElement>()
-//         .unwrap()
-// }
-
 // Main setup
 #[wasm_bindgen]
 pub fn wasm_main() {
-    let width = window().inner_width().unwrap().as_f64().unwrap();
-    let height = window().inner_height().unwrap().as_f64().unwrap();
+    // Add some objects to the world space
+    {
+        let mut world_space = WORLD_SPACE.lock().unwrap();
+        let z = import_object(&OBJECT1, 5.0, 3.0, 0.0);
+        (*world_space).insert("ob1".to_string(), z);
 
-    CANVAS.with(|f| {
-        let canvas = &*f;
-        canvas.set_attribute("width", &width.to_string());
-        canvas.set_attribute("height", &height.to_string());
+        let z = import_object(&OBJECT1, -1.0, 3.0, 0.0);
+        (*world_space).insert("ob1 copy".to_string(), z);
+        // worldSpace["ob1 copy"] = import_object(object1, -1.0, 3.0, 0.0);
+        // worldSpace["ob2"] = import_object(object2, 5.0, -3.0, 1.0);
+        // worldSpace["ob3"] = import_object(object3, -1.0, 0.0, -1.0);
+    }
 
-        // Print some info to the console log
-        // web_sys::console::log_2(&"Width attribute: %s".into(), &width_string.into());
-        // web_sys::console::log_2(&"Height attribute: %s".into(), &height_string.into());
-        // web_sys::console::log_2(&"Width: %s".into(), &width.into());
-        // web_sys::console::log_2(&"Height: %s".into(), &height.into());
+    // Scale the objects up a bit
+    {
+        let mut queue_op = QUEUE_OP.lock().unwrap();
+        *queue_op = OperationType::SCALE;
+    }
+    {
+        let mut transform_matrix = TRANSFORM_MATRIX.lock().unwrap();
+        *transform_matrix = scale(&*transform_matrix, 2.0, 2.0, 2.0);
+    }
+    apply_transformation();
 
-        // Clear the background
-        let ctx = canvas.get_context("2d").unwrap().unwrap().dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
-        ctx.set_fill_style(&"white".into());
-        ctx.fill_rect(0.0, 0.0, width, height);
+    // Start a rotation going
+    {
+        let step_size = STEP_SIZE.lock().unwrap();
+        set_up_operation(OperationType::ROTATE, 12, -15.0, 15.0, 0.0);
+        let mut prev_key = PREV_KEY.lock().unwrap();
+        *prev_key = KeyVal::KeyPageUp as i32;
+    }
 
-        // Set up the render loop
-        let f = Rc::new(RefCell::new(None));
-        let g = f.clone();
-        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-            render_frame();
-            req_anim_frame(f.borrow().as_ref().unwrap());
-        }) as Box<dyn FnMut()>));
-        req_anim_frame(g.borrow().as_ref().unwrap());
-    });
+    // Set up the render loop
+    let f = Rc::new(RefCell::new(None));
+    let g = f.clone();
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        render_frame();
+        req_anim_frame(f.borrow().as_ref().unwrap());
+    }) as Box<dyn FnMut()>));
+    req_anim_frame(g.borrow().as_ref().unwrap());
+}
+
+// Apply each transformation, one small part at a time (this gives the animation effect)
+#[wasm_bindgen]
+pub fn apply_transformation() {
+    {
+        let queue_op = QUEUE_OP.lock().unwrap();
+        let queue_parts = QUEUE_PARTS.lock().unwrap();
+        if (*queue_parts < 1 && *queue_op == OperationType::SCALE) || *queue_op == OperationType::NOTHING {
+            let mut op_text = OP_TEXT.lock().unwrap();
+            *op_text = "Complete.".to_string();
+            return;
+        }
+    }
+
+    // Transform each object in the world space, using the defined global transform matrix
+    let mut new_world_space: HashMap<String, Object> = HashMap::new();
+    {
+        let world_space = WORLD_SPACE.lock().unwrap();
+        let transform_matrix = TRANSFORM_MATRIX.lock().unwrap();
+        for (j, o) in &(*world_space) {
+
+            // Create a blank new object
+            let mut new_object = Object::new();
+
+            // Add the points to the new object, transformed from the original object
+            let mut new_points: Vec<Point> = Vec::new();
+            for orig_point in o.points.iter() {
+                new_points.push(transform(&*transform_matrix, *orig_point));
+            }
+            new_object.points = new_points;
+
+            // Copy the edges across from the original object
+            let mut new_edges: Vec<Edge> = Vec::new();
+            for orig_edge in o.edges.iter() {
+                let mut new_edge = Edge::new();
+                for p in orig_edge.iter() {
+                    new_edge.push(*p);
+                }
+                new_edges.push(new_edge);
+            }
+            new_object.edges = new_edges;
+
+            // Copy the surfaces across from the original object
+            let mut new_surfaces: Vec<Surface> = Vec::new();
+            for orig_surf in o.surfaces.iter() {
+                let mut new_surf = Surface::new();
+                for p in orig_surf.iter() {
+                    new_surf.push(*p);
+                }
+                new_surfaces.push(new_surf);
+            }
+            new_object.surfaces = new_surfaces;
+
+            // Copy the colour across from the original object
+            new_object.colour = o.colour.clone();
+
+            // Transform the mid point of the object.  In theory, this should mean the mid point can
+            // always be used for a simple (not-cpu-intensive) way to sort the objects in Z depth order
+            new_object.mid_point = transform(&*transform_matrix, o.mid_point);
+
+            // Add the transformed object to the new world space
+            new_world_space.insert(j.to_string(), new_object);
+        }
+    }
+    // Replace the original world space with the updated world space
+    let mut world_space = WORLD_SPACE.lock().unwrap();
+    *world_space = new_world_space;
+
+    let mut queue_parts = QUEUE_PARTS.lock().unwrap();
+    *queue_parts -= 1;
 }
 
 // Simple keyboard handler for catching the arrow, WASD, and numpad keys
 // Key value info can be found here: https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/key/Key_Values
 #[wasm_bindgen]
-pub fn key_press_handler(key_val: i32) {
+pub fn key_press_handler(mut key_val: i32) {
     if DEBUG {
         web_sys::console::log_2(&"Key is: ".into(), &key_val.into());
     }
@@ -211,48 +306,54 @@ pub fn key_press_handler(key_val: i32) {
     if key_val == KeyVal::KeyMinus as i32 {
         let mut stp = STEP_SIZE.lock().unwrap();
         *stp -= 5.0;
+        let prev_key = PREV_KEY.lock().unwrap();
+        key_val = *prev_key;
     } else if key_val == KeyVal::KeyPlus as i32 {
         let mut stp = STEP_SIZE.lock().unwrap();
         *stp += 5.0;
+        let prev_key = PREV_KEY.lock().unwrap();
+        key_val = *prev_key;
     }
 
     // Set up translate and rotate operations
+    // FIXME: This should use a match instead, but we'd need to implement stuff for KeyVal to make
+    //        that work.  Maybe later.
     if key_val == KeyVal::KeyMoveLeft as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::TRANSLATE, 50, 12, *stp / 2.0, 0.0, 0.0);
+        set_up_operation(OperationType::TRANSLATE, 12, *stp / 2.0, 0.0, 0.0);
     } else if key_val == KeyVal::KeyMoveRight as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::TRANSLATE, 50, 12, -*stp/2.0, 0.0, 0.0);
+        set_up_operation(OperationType::TRANSLATE, 12, -*stp/2.0, 0.0, 0.0);
     } else if key_val == KeyVal::KeyMoveUp as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, *stp/2.0, 0.0);
+        set_up_operation(OperationType::TRANSLATE, 12, 0.0, *stp/2.0, 0.0);
     } else if key_val == KeyVal::KeyMoveDown as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::TRANSLATE, 50, 12, 0.0, -*stp/2.0, 0.0);
+        set_up_operation(OperationType::TRANSLATE, 12, 0.0, -*stp/2.0, 0.0);
     } else if key_val == KeyVal::KeyRotateLeft as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, 0.0, -*stp, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, 0.0, -*stp, 0.0);
     } else if key_val == KeyVal::KeyRotateRight as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, 0.0, *stp, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, 0.0, *stp, 0.0);
     } else if key_val == KeyVal::KeyRotateUp as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, -*stp, 0.0, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, -*stp, 0.0, 0.0);
     } else if key_val == KeyVal::KeyRotateDown as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, *stp, 0.0, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, *stp, 0.0, 0.0);
     } else if key_val == KeyVal::KeyPageUp as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, -*stp, *stp, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, -*stp, *stp, 0.0);
     } else if key_val == KeyVal::KeyPageDown as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, *stp, *stp, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, *stp, *stp, 0.0);
     } else if key_val == KeyVal::KeyHome as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, -*stp, -*stp, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, -*stp, -*stp, 0.0);
     } else if key_val == KeyVal::KeyEnd as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 50, 12, *stp, -*stp, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, *stp, -*stp, 0.0);
     }
     let mut prev_key = PREV_KEY.lock().unwrap();
     *prev_key = key_val;
@@ -358,58 +459,19 @@ fn render_frame() {
             i += step;
         }
 
-        // The point objects
-        let object1 = Object {
-            colour: "lightblue".into(),
-            points: vec![
-                Point {num: 0, x: 0.0, y: 1.75, z: 1.0}, // Point 0 for this object
-                Point {num: 1, x: 1.5, y: -1.75, z: 1.0}, // Point 1 for this object
-                Point {num: 2, x: -1.5, y: -1.75, z: 1.0}, // etc
-                Point {num: 3, x: 0.0, y: 0.0, z: 1.75},
-            ],
-            edges: vec![
-                vec![0, 1], // Connect point 0 to point 1 to define an edge
-                vec![0, 2], // Connect point 0 to point 2 to define an edge
-                vec![1, 2], // Connect point 1 to point 2 to define an edge
-                vec![0, 3], // etc
-                vec![1, 3],
-                vec![2, 3],
-            ],
-            surfaces: vec![
-                vec![0, 1, 3], // Connect edge 0, 1, and 3 to define a surface
-                vec![0, 2, 3], // etc
-                vec![0, 1, 2],
-                vec![1, 2, 3],
-            ],
-            mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
-        };
-
-        // The empty world space
-        let point_counter = 1;
-        let mut world_space = HashMap::new();
-        let (z, _point_counter) = import_object(&object1, point_counter, 5.0, 3.0, 0.0);
-        world_space.insert("ob1", &z);
-
-        // // Sort the objects by mid point Z depth order
+        // Sort the world space objects by mid point Z depth order
         // let order = paintOrderSlice;
         // for i, j := range worldSpace {
         //     order = append(order, paintOrder{name: i, midZ: j.Mid.Z})
         // }
         // sort.Sort(paintOrderSlice(order))
 
-        // Draw the objects, in Z depth order
+        // Draw the objects
+        // FIXME: Calculate the correct object draw order (prob by mid point Z depth), and use it
         let mut point_x;
         let mut point_y;
-        let num_worlds = world_space.len();
-        for _i in 0..num_worlds {
-            let obj = &object1;
-            // let obj = match world_space.get(&"obj1") {
-            //     Some(&thing) => thing,
-            //     _ => (),
-            // };
-            // let obj = world_space[i];
-            //     let o = world_space[order[i].name];
-
+        let world_space = WORLD_SPACE.lock().unwrap();
+        for (_i, obj) in &*world_space {
             // Draw the surfaces
             ctx.set_fill_style(&format!("{}", obj.colour).into());
             for surf in obj.surfaces.iter() {
@@ -493,7 +555,6 @@ fn render_frame() {
         ctx.fill_text("Press a key a 2nd time to", *graph_width + 20.0, text_y);
         text_y += 20.0;
         ctx.fill_text("stop the current change.", *graph_width + 20.0, text_y);
-        text_y += 40.0;
 
         // Clear the source code link area
         ctx.set_fill_style(&"white".into());
@@ -548,7 +609,7 @@ fn req_anim_frame(z: &Closure<dyn FnMut()>) {
 
 // Returns an object whose points have been transformed into 3D world space XYZ co-ordinates.  Also assigns a number
 // to each point
-fn import_object(ob: &Object, mut point_counter: i32, x: f64, y: f64, z: f64) -> (Object, i32) {
+fn import_object(ob: &Object, x: f64, y: f64, z: f64) -> Object {
     // X and Y translation matrix.  Translates the objects into the world space at the given X and Y co-ordinates
     let translate_matrix = [
         // This is really a 4 x 4 matrix, it's just rustfmt destroys the layout
@@ -571,6 +632,7 @@ fn import_object(ob: &Object, mut point_counter: i32, x: f64, y: f64, z: f64) ->
         z: 0.0,
     };
     for j in ob.points.iter() {
+        let mut point_counter = POINT_COUNTER.lock().unwrap();
         pt.x = (translate_matrix[0] * j.x) // 1st col, top
             + (translate_matrix[1] * j.y)
             + (translate_matrix[2] * j.z)
@@ -584,7 +646,7 @@ fn import_object(ob: &Object, mut point_counter: i32, x: f64, y: f64, z: f64) ->
             + (translate_matrix[10] * j.z)
             + (translate_matrix[11] * 1.0);
         translated_object.points.push(Point {
-            num: point_counter,
+            num: *point_counter,
             x: pt.x,
             y: pt.y,
             z: pt.z,
@@ -592,7 +654,7 @@ fn import_object(ob: &Object, mut point_counter: i32, x: f64, y: f64, z: f64) ->
         mid_x += pt.x;
         mid_y += pt.y;
         mid_z += pt.z;
-        point_counter += 1;
+        *point_counter += 1;
     }
 
     // Determine the mid point for the object
@@ -610,7 +672,7 @@ fn import_object(ob: &Object, mut point_counter: i32, x: f64, y: f64, z: f64) ->
         translated_object.surfaces.push(j.clone());
     }
 
-    (translated_object, point_counter)
+    translated_object
 }
 
 // Multiplies one matrix by another
@@ -801,7 +863,7 @@ fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
 }
 
 // Set up the details for the transformation operation
-fn set_up_operation(op: OperationType, _t: i32, f: i32, x: f64, y: f64, z: f64) {
+fn set_up_operation(op: OperationType, f: i32, x: f64, y: f64, z: f64) {
     let queue_parts = f.clone() as f64; // Number of parts to break each transformation into
     let mut transformation_matrix = TRANSFORM_MATRIX.lock().unwrap(); // Unlock the mutex
     *transformation_matrix = IDENTITY_MATRIX.clone(); // Reset the transform matrix

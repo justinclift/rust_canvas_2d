@@ -218,6 +218,12 @@ __exports.wasm_main = function() {
 };
 
 /**
+*/
+__exports.apply_transformation = function() {
+    wasm.apply_transformation();
+};
+
+/**
 * @param {number} key_val
 */
 __exports.key_press_handler = function(key_val) {
@@ -281,6 +287,15 @@ async function init(input) {
     }
     const imports = {};
     imports.wbg = {};
+    imports.wbg.__wbindgen_cb_drop = function(arg0) {
+        const obj = takeObject(arg0).original;
+        if (obj.cnt-- == 1) {
+            obj.a = 0;
+            return true;
+        }
+        var ret = false;
+        return ret;
+    };
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
         takeObject(arg0);
     };
@@ -291,15 +306,6 @@ async function init(input) {
     imports.wbg.__wbindgen_number_new = function(arg0) {
         var ret = arg0;
         return addHeapObject(ret);
-    };
-    imports.wbg.__wbindgen_cb_drop = function(arg0) {
-        const obj = takeObject(arg0).original;
-        if (obj.cnt-- == 1) {
-            obj.a = 0;
-            return true;
-        }
-        var ret = false;
-        return ret;
     };
     imports.wbg.__wbg_instanceof_Window_04bba8b54ef81db0 = function(arg0) {
         var ret = getObject(arg0) instanceof Window;
@@ -498,8 +504,8 @@ async function init(input) {
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_closure_wrapper68 = function(arg0, arg1, arg2) {
-        var ret = makeMutClosure(arg0, arg1, 11, __wbg_adapter_20);
+    imports.wbg.__wbindgen_closure_wrapper128 = function(arg0, arg1, arg2) {
+        var ret = makeMutClosure(arg0, arg1, 57, __wbg_adapter_20);
         return addHeapObject(ret);
     };
 
