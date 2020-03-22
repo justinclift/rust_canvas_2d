@@ -194,7 +194,7 @@ pub fn wasm_main() {
 #[wasm_bindgen]
 pub fn key_press_handler(key_val: i32) {
     if DEBUG {
-        web_sys::console::log_2(&"Key is: {}".into(), &key_val.into());
+        web_sys::console::log_2(&"Key is: ".into(), &key_val.into());
     }
 
     // If a key is pressed for a 2nd time in a row, then stop the animated movement
@@ -285,6 +285,11 @@ fn render_frame() {
         let canvas = &*f;
         let mut width = canvas.width() as f64;
         let mut height = canvas.height() as f64;
+        {
+            // Update the height in the global
+            let mut h = HEIGHT.lock().unwrap();
+            *h = height;
+        }
 
         // Handle window resizing
         let current_body_width = window().inner_width().unwrap().as_f64().unwrap();
@@ -378,8 +383,6 @@ fn render_frame() {
             ],
             mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
         };
-
-        let high_light_source = false;
 
         // The empty world space
         let point_counter = 1;
@@ -501,10 +504,13 @@ fn render_frame() {
         ctx.set_font("bold 14px serif".into());
         ctx.fill_text("Source code:", *graph_width + 20.0, graph_height - 35.0);
         ctx.set_fill_style(&"blue".into());
-        if high_light_source == true {
-            ctx.set_font("bold 12px sans-serif".into());
-        } else {
-            ctx.set_font("12px sans-serif".into());
+        {
+            let high_light_source = HIGHLIGHT_SOURCE.lock().unwrap();
+            if *high_light_source == true {
+                ctx.set_font("bold 12px sans-serif".into());
+            } else {
+                ctx.set_font("12px sans-serif".into());
+            }
         }
         ctx.fill_text(SOURCE_URL, *graph_width + 20.0, graph_height - 15.0);
 

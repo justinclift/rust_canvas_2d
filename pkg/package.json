@@ -8,6 +8,5 @@
     "canvas_2d_test1_bg.wasm",
     "canvas_2d_test1.js"
   ],
-  "module": "canvas_2d_test1.js",
-  "sideEffects": false
+  "browser": "canvas_2d_test1.js"
 }

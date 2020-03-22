@@ -2,5 +2,5 @@
 
 set -ex
 
-wasm-pack build --target web --no-typescript
+wasm-pack build --target no-modules --no-typescript
 go run server.go

@@ -1,9 +1,11 @@
+let wasm_bindgen;
+(function() {
+    const __exports = {};
+    let wasm;
 
-let wasm;
+    const heap = new Array(32).fill(undefined);
 
-const heap = new Array(32).fill(undefined);
-
-heap.push(undefined, null, true, false);
+    heap.push(undefined, null, true, false);
 
 function getObject(idx) { return heap[idx]; }
 
@@ -211,24 +213,24 @@ function __wbg_adapter_20(arg0, arg1) {
 
 /**
 */
-export function wasm_main() {
+__exports.wasm_main = function() {
     wasm.wasm_main();
-}
+};
 
 /**
 * @param {number} key_val
 */
-export function key_press_handler(key_val) {
+__exports.key_press_handler = function(key_val) {
     wasm.key_press_handler(key_val);
-}
+};
 
 /**
 * @param {number} cx
 * @param {number} cy
 */
-export function move_handler(cx, cy) {
+__exports.move_handler = function(cx, cy) {
     wasm.move_handler(cx, cy);
-}
+};
 
 function handleError(e) {
     wasm.__wbindgen_exn_store(addHeapObject(e));
@@ -269,7 +271,13 @@ async function load(module, imports) {
 
 async function init(input) {
     if (typeof input === 'undefined') {
-        input = import.meta.url.replace(/\.js$/, '_bg.wasm');
+        let src;
+        if (document === undefined) {
+            src = location.href;
+        } else {
+            src = document.currentScript.src;
+        }
+        input = src.replace(/\.js$/, '_bg.wasm');
     }
     const imports = {};
     imports.wbg = {};
@@ -490,7 +498,7 @@ async function init(input) {
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbindgen_closure_wrapper67 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper68 = function(arg0, arg1, arg2) {
         var ret = makeMutClosure(arg0, arg1, 11, __wbg_adapter_20);
         return addHeapObject(ret);
     };
@@ -507,5 +515,6 @@ async function init(input) {
     return wasm;
 }
 
-export default init;
+wasm_bindgen = Object.assign(init, __exports);
 
+})();
