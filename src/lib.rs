@@ -965,7 +965,7 @@ fn set_up_operation(op: OperationType, f: i32, x: f64, y: f64, z: f64) {
     {
         let mut q = QUEUE_PARTS.lock().unwrap(); // Number of parts to break each transformation into
         *q = f;
-        queue_parts = f64::from(*q);
+        queue_parts = *q as f64;
     }
 
     let mut transformation_matrix = TRANSFORM_MATRIX.lock().unwrap(); // Unlock the mutex
