@@ -386,10 +386,10 @@ pub fn key_press_handler(mut key_val: i32) {
     //        that work.  Maybe later.
     if key_val == KeyVal::KeyMoveLeft as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::TRANSLATE, 12, *stp / 2.0, 0.0, 0.0);
+        set_up_operation(OperationType::TRANSLATE, 12, -*stp / 2.0, 0.0, 0.0);
     } else if key_val == KeyVal::KeyMoveRight as i32 {
         let stp = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::TRANSLATE, 12, -*stp/2.0, 0.0, 0.0);
+        set_up_operation(OperationType::TRANSLATE, 12, *stp/2.0, 0.0, 0.0);
     } else if key_val == KeyVal::KeyMoveUp as i32 {
         let stp = STEP_SIZE.lock().unwrap();
         set_up_operation(OperationType::TRANSLATE, 12, 0.0, *stp/2.0, 0.0);
