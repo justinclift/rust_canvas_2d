@@ -69,40 +69,28 @@ impl Object {
     }
 }
 
-// struct PaintOrder {
-//     mid_z: f64, // Z depth of an object's mid point
-//     name: String
-// }
-//
-// impl PaintOrder {
-//     fn String(&self) -> String {
-//         format!("Name: {}, Mid point: {}", self.name, self.mid_z)
-//     }
-// }
-//
-// type PaintOrderSlice = Vec<PaintOrder>;
-//
-// impl PaintOrderSlice {
-//     fn Len(&self) -> usize {
-//         self.len()
-//     }
-//
-//     fn Swap(&self, i: i32, j: i32) {
-//         (self[i], self[j]) = (self[j], self[i]);
-//     }
-//
-//     fn Less(&self, i: i32, j: i32) -> bool {
-//         self[i].mid_z < self[j].mid_z
-//     }
-// }
+#[derive(PartialEq)]
+struct PaintObject {
+    name: String,
+    mid_z: f64, // Z depth of an object's mid point
+}
+
+impl PaintObject {
+    pub fn new(name: String, mid_z: f64) -> Self {
+        PaintObject {
+            name,
+            mid_z
+        }
+    }
+}
 
 // The 4x4 identity matrix
 type Matrix = [f64; 16];
 const IDENTITY_MATRIX: Matrix = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
 ];
-const SOURCE_URL: &str = "https://github.com/justinclift/rust_canvas_2d_test1";
-const DEBUG: bool = true;
+const SOURCE_URL: &str = "https://github.com/justinclift/rust_canvas_2d";
+const DEBUG: bool = false;
 
 thread_local! {
     pub static CANVAS: web_sys::HtmlCanvasElement = document()
@@ -247,8 +235,7 @@ pub fn wasm_main() {
 
     // Start a rotation going
     {
-        let step_size = STEP_SIZE.lock().unwrap();
-        set_up_operation(OperationType::ROTATE, 12, -15.0, 15.0, 0.0);
+        set_up_operation(OperationType::ROTATE, 12, -25.0, 25.0, 0.0);
         let mut prev_key = PREV_KEY.lock().unwrap();
         *prev_key = KeyVal::KeyPageUp as i32;
     }
@@ -557,19 +544,21 @@ fn render_frame() {
         }
 
         // Sort the world space objects by mid point Z depth order
-        // let order = paintOrderSlice;
-        // for i, j := range worldSpace {
-        //     order = append(order, paintOrder{name: i, midZ: j.Mid.Z})
-        // }
-        // sort.Sort(paintOrderSlice(order))
+        let mut paint_order: Vec<PaintObject> = vec![];
+        {
+            let world_space = WORLD_SPACE.lock().unwrap();
+            for (idx, obj) in &(*world_space) {
+                paint_order.push(PaintObject::new(idx.clone(), obj.mid_point.z.clone()));
+            }
+        }
+        paint_order.sort_by(|a, b| b.mid_z.partial_cmp(&a.mid_z).unwrap());
 
         // Draw the objects
-        // FIXME: Calculate the correct object draw order (prob by mid point Z depth), and use it
         let mut point_x;
         let mut point_y;
         let world_space = WORLD_SPACE.lock().unwrap();
-        for (_i, obj) in &*world_space {
-            // Draw the surfaces
+        for z in paint_order {
+            let obj = &(*world_space)[&z.name];
             ctx.set_fill_style(&format!("{}", obj.colour).into());
             for surf in obj.surfaces.iter() {
                 for (m, n) in surf.iter().enumerate() {
