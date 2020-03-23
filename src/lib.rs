@@ -155,6 +155,53 @@ lazy_static! {
         ],
         mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
     };
+
+    static ref OBJECT2: Object = Object {
+        colour: "lightgreen".into(),
+        points: vec![
+            Point {num: 0, x: 1.5, y: 1.5, z: -1.0},
+			Point {num: 1, x: 1.5, y: -1.5, z: -1.0},
+			Point {num: 2, x: -1.5, y: -1.5, z: -1.0},
+        ],
+        edges: vec![
+            vec![0, 1],
+			vec![1, 2],
+            vec![2, 0],
+        ],
+        surfaces: vec![
+            vec![0, 1, 2],
+        ],
+        mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
+    };
+
+    static ref OBJECT3: Object = Object {
+        colour: "indianred".into(),
+        points: vec![
+			Point {num: 0, x: 2.0, y: -2.0, z: 1.0},
+			Point {num: 1, x: 2.0, y: -4.0, z: 1.0},
+			Point {num: 2, x: -2.0, y: -4.0, z: 1.0},
+			Point {num: 3, x: -2.0, y: -2.0, z: 1.0},
+			Point {num: 4, x: 0.0, y: -3.0, z: 2.5},
+        ],
+        edges: vec![
+			vec![0, 1],
+			vec![1, 2],
+            vec![2, 3],
+            vec![3, 0],
+            vec![0, 4],
+            vec![1, 4],
+            vec![2, 4],
+            vec![3, 4],
+        ],
+        surfaces: vec![
+			vec![0, 1, 4],
+			vec![1, 2, 4],
+			vec![2, 3, 4],
+			vec![3, 0, 4],
+			vec![0, 1, 2, 3],
+        ],
+        mid_point: Point {num: 0, x: 0.0, y: 0.0, z: 0.0},
+    };
 }
 
 // * Helper functions, as the web_sys pieces don't seem capable of being stored in globals *
@@ -179,8 +226,12 @@ pub fn wasm_main() {
 
         let z = import_object(&OBJECT1, -1.0, 3.0, 0.0);
         (*world_space).insert("ob1 copy".to_string(), z);
-        // worldSpace["ob2"] = import_object(object2, 5.0, -3.0, 1.0);
-        // worldSpace["ob3"] = import_object(object3, -1.0, 0.0, -1.0);
+
+        let z = import_object(&OBJECT2, 5.0, -3.0, 1.0);
+        (*world_space).insert("ob2".to_string(), z);
+
+        let z = import_object(&OBJECT3, -1.0, 0.0, -1.0);
+        (*world_space).insert("ob3".to_string(), z);
     }
 
     // Scale the objects up a bit
@@ -275,6 +326,7 @@ pub fn apply_transformation() {
             new_world_space.insert(j.to_string(), new_object);
         }
     }
+
     // Replace the original world space with the updated world space
     let mut world_space = WORLD_SPACE.lock().unwrap();
     *world_space = new_world_space;
@@ -288,8 +340,8 @@ pub fn apply_transformation() {
 pub fn click_handler(cx: i32, cy: i32) {
     let client_x = cx as f64;
     let client_y = cy as f64;
-    let mut height;
-    let mut graph_width;
+    let height;
+    let graph_width;
     {
         let h = HEIGHT.lock().unwrap();
         height = *h;
@@ -419,6 +471,10 @@ pub fn wheel_handler(val: i32) {
         web_sys::console::log_2(&"scale_size: ".into(), &scale_size.into());
     }
     set_up_operation(OperationType::SCALE, 12, scale_size, scale_size, scale_size);
+    {
+        let mut prev_key = PREV_KEY.lock().unwrap();
+        *prev_key = KeyVal::KeyNone as i32;
+    }
 }
 
 // Do the rendering here
@@ -900,13 +956,18 @@ fn scale(m: &Matrix, x: f64, y: f64, z: f64) -> Matrix {
         //   0.0, 0.0, 0.0, 1.0,
         x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
     ];
-    web_sys::console::log_1(&"Calculating scale()".into());
     matrix_mult(&scale_matrix, m)
 }
 
 // Set up the details for the transformation operation
 fn set_up_operation(op: OperationType, f: i32, x: f64, y: f64, z: f64) {
-    let queue_parts = f.clone() as f64; // Number of parts to break each transformation into
+    let queue_parts: f64;
+    {
+        let mut q = QUEUE_PARTS.lock().unwrap(); // Number of parts to break each transformation into
+        *q = f;
+        queue_parts = f64::from(*q);
+    }
+
     let mut transformation_matrix = TRANSFORM_MATRIX.lock().unwrap(); // Unlock the mutex
     *transformation_matrix = IDENTITY_MATRIX.clone(); // Reset the transform matrix
     match op {
@@ -928,9 +989,9 @@ fn set_up_operation(op: OperationType, f: i32, x: f64, y: f64, z: f64) {
 
         // Scale the objects in world space
         OperationType::SCALE => {
-            let mut x_part = 0.0;
-            let mut y_part = 0.0;
-            let mut z_part = 0.0;
+            let mut x_part = 1.0;
+            let mut y_part = 1.0;
+            let mut z_part = 1.0;
             if x != 1.0 {
                 x_part = ((x - 1.0) / queue_parts) + 1.0;
             }
@@ -942,12 +1003,8 @@ fn set_up_operation(op: OperationType, f: i32, x: f64, y: f64, z: f64) {
             }
             *transformation_matrix = scale(&*transformation_matrix, x_part, y_part, z_part);
 
-            let foo = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
-            web_sys::console::log_1(&foo.clone().into());
-
             let mut op_text = OP_TEXT.lock().unwrap(); // Unlocks the mutex
-            *op_text = foo;
-            // *op_text = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
+            *op_text = format!("Scale. X: {} Y: {} Z: {}", x, y, z); // Sets the new value
         }
 
         // Translate (move) the objects in world space
